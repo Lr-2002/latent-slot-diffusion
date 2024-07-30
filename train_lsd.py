@@ -161,7 +161,7 @@ def log_validation(
                                                attn[:, 0], 'b num_h (h w) s -> b s h w', h=int(np.sqrt(attn.shape[-2])), 
                                                reduction='mean'
                                            ),
-                                           recon=[pixel_values_recon * 0.5 + 0.5, images_gen])
+                                           recon=[pixel_values_recon * 0.5 + 0.5, images_gen]) # pixel is vae decode; images_gen is slot recon
         ndarr = grid_image.mul(255).add_(0.5).clamp_(0, 255).permute(1, 2, 0).to('cpu', torch.uint8).numpy()
         im = Image.fromarray(ndarr)
         images.append(im)
@@ -581,6 +581,12 @@ def main(args):
     )
 
     for epoch in range(first_epoch, args.num_train_epochs):
+        """
+        1. where is the noise added 
+        2. 
+        
+        
+        """
         if train_unet:
             unet.train()
         if train_backbone:
