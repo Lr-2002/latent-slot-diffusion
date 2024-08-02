@@ -62,7 +62,7 @@ parser.add_argument(
 parser.add_argument(
     "--ckpt_path",
     type=str,
-    default=None,
+    default="/home/lr-2002/code/latent-slot-diffusion/logs/movi-e/latent_slot_diffusion/checkpoint-200000",
     help="Path to a checkpoint folder for the model.",
 )
 
@@ -150,64 +150,64 @@ parser.add_argument(
 parser.add_argument(
     "--path_to_coco",
     type=str,
-    default="path_to_coco",
+    default="/home/lr-2002/movi_data/movi-e/movi-e-train-with-label/images",
     help="Path to coco dataset.",
 )
 
 args = parser.parse_args()
+from src.data.dataset import GlobDataset
+# class GlobDataset(Dataset):
+#     def __init__(self, coco_dir="/path_to_coco/", coco_split="val2017",
+#                 img_size=256, vit_input_resolution=448):
+#         super().__init__()
+#
+#         self.coco_dir=coco_dir
+#         self.coco_split='val2017'
+#         annFile='{}/annotations/instances_{}.json'.format(self.coco_dir, self.coco_split)
+#
+#         # Initialize the COCO api for instance annotations
+#         self.coco=COCO(annFile)
+#
+#         img_ids = sorted(self.coco.getImgIds())
+#         self.imgs_info = self.coco.loadImgs(img_ids) # 5000
+#
+#         self.transform = transforms.Compose([
+#             transforms.Resize(img_size, interpolation=torchvision.transforms.InterpolationMode.BILINEAR),
+#             transforms.CenterCrop(img_size),
+#             transforms.ToTensor(),
+#             transforms.Normalize(
+#                 mean=[0.5],
+#                 std=[0.5]
+#             )
+#         ])
+#
+#         self.transform_vit = transforms.Compose([
+#             transforms.Resize(vit_input_resolution, interpolation=torchvision.transforms.InterpolationMode.BILINEAR),
+#             transforms.CenterCrop(vit_input_resolution),
+#             transforms.ToTensor(),
+#             transforms.Normalize(
+#                 mean=[0.485, 0.456, 0.406],
+#                 std=[0.229, 0.224, 0.225]
+#             )
+#         ])
+#
+#
+#     def __len__(self):
+#         return len(self.imgs_info)
+#
+#     def __getitem__(self, i):
+#         img_path = os.path.join(self.coco_dir, 'images', self.coco_split, self.imgs_info[i]['file_name'])
+#         img = Image.open(img_path)
+#         if not img.mode == "RGB":
+#             img = img.convert("RGB")
+#
+#         example["pixel_values"] = self.transform(img)
+#         image_vit = self.transform_vit(img)
+#         example["pixel_values_vit"] = image_vit
+#         return example
 
-class GlobDataset(Dataset):
-    def __init__(self, coco_dir="/path_to_coco/", coco_split="val2017", 
-                img_size=256, vit_input_resolution=448):
-        super().__init__()
-
-        self.coco_dir=coco_dir
-        self.coco_split='val2017'
-        annFile='{}/annotations/instances_{}.json'.format(self.coco_dir, self.coco_split)
-
-        # Initialize the COCO api for instance annotations
-        self.coco=COCO(annFile)
-
-        img_ids = sorted(self.coco.getImgIds())
-        self.imgs_info = self.coco.loadImgs(img_ids) # 5000
-
-        self.transform = transforms.Compose([
-            transforms.Resize(img_size, interpolation=torchvision.transforms.InterpolationMode.BILINEAR),
-            transforms.CenterCrop(img_size),
-            transforms.ToTensor(),
-            transforms.Normalize(
-                mean=[0.5],
-                std=[0.5]
-            )
-        ])
-
-        self.transform_vit = transforms.Compose([
-            transforms.Resize(vit_input_resolution, interpolation=torchvision.transforms.InterpolationMode.BILINEAR),
-            transforms.CenterCrop(vit_input_resolution),
-            transforms.ToTensor(),
-            transforms.Normalize(
-                mean=[0.485, 0.456, 0.406],
-                std=[0.229, 0.224, 0.225]
-            )
-        ])
-
-    
-    def __len__(self):
-        return len(self.imgs_info)
-
-    def __getitem__(self, i):
-        img_path = os.path.join(self.coco_dir, 'images', self.coco_split, self.imgs_info[i]['file_name'])
-        img = Image.open(img_path)
-        if not img.mode == "RGB":
-            img = img.convert("RGB")
-
-        example["pixel_values"] = self.transform(img)
-        image_vit = self.transform_vit(img)
-        example["pixel_values_vit"] = image_vit
-        return example
-
-test_dataset = GlobDataset(coco_dir=args.path_to_coco, vit_input_resolution=args.vit_input_resolution)
-
+# test_dataset = GlobDataset(coco_dir=args.path_to_coco, vit_input_resolution=args.vit_input_resolution)
+test_dataset = GlobDataset(path_root, 256, "**/*.png")
 logger = get_logger(__name__)
 
 set_seed(args.seed)
@@ -232,10 +232,10 @@ loader_kwargs = {
 
 test_loader = DataLoader(test_dataset, sampler=test_sampler, **loader_kwargs)
 
-if os.path.exists(os.path.join(args.ckpt_path, "UNetEncoder")):
+if os.path.exists(os.path.join(args.ckpt_path, "unetencoder")):
     pretrain_backbone = False
     backbone = UNetEncoder.from_pretrained(
-        args.ckpt_path, subfolder="UNetEncoder".lower())
+        args.ckpt_path, subfolder="unetencoder".lower())
     backbone = backbone.to(device=accelerator.device, dtype=weight_dtype)
 else:
     pretrain_backbone = True
@@ -276,7 +276,7 @@ generator = None if args.seed is None else torch.Generator(
         device=accelerator.device).manual_seed(args.seed)
 
 slot_attn = MultiHeadSTEVESA.from_pretrained(
-    args.ckpt_path, subfolder="MultiHeadSTEVESA".lower())
+    args.ckpt_path, subfolder="multiheadstevesa".lower())
 slot_attn = slot_attn.to(device=accelerator.device, dtype=weight_dtype)
 
 colorizer = ColorMask(

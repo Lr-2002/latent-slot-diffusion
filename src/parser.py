@@ -292,6 +292,13 @@ def parse_args(input_args=None):
         default=448,
         help="Input resolution for the ViT. Attention resolution will be 1/14 of this value (with vit14).",
     )
+    parser.add_argument(
+        "--use_mask",
+        type=bool,
+        default=False,
+
+
+    )
 
     if input_args is not None:
         args = parser.parse_args(input_args)

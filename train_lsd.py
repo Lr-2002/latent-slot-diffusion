@@ -40,7 +40,7 @@ from einops import rearrange, reduce, repeat
 from src.models.backbone import UNetEncoder
 from src.models.slot_attn import MultiHeadSTEVESA
 from src.models.unet_with_pos import UNet2DConditionModelWithPos
-from src.data.dataset import GlobDataset
+from src.data.dataset import GlobDataset_MASK
 
 from src.parser import parse_args
 
@@ -443,7 +443,7 @@ def main(args):
         optimizer, lr_lambda=[lambda _: 1, lambda _: 1] if train_unet else [lambda _: 1]
         )
 
-    train_dataset = GlobDataset(
+    train_dataset = GlobDataset_MASK(
         root=args.dataset_root,
         img_size=args.resolution,
         img_glob=args.dataset_glob,
@@ -461,7 +461,7 @@ def main(args):
     )
 
     # validation set is only for visualization
-    val_dataset = GlobDataset(
+    val_dataset = GlobDataset_MASK(
         root=args.dataset_root,
         img_size=args.resolution,
         img_glob=args.dataset_glob,
@@ -620,6 +620,8 @@ def main(args):
 
             # timestep is not used, but should we?
             if args.backbone_config == "pretrain_dino":
+                # todo here use pretrain_dino or other to make the backbone to get feature
+                # todo it seems that the feat was just feed into the slot_attn
                 pixel_values_vit = batch["pixel_values_vit"].to(dtype=weight_dtype)
                 feat = backbone(pixel_values_vit)
             else:
