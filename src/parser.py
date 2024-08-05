@@ -242,6 +242,13 @@ def parse_args(input_args=None):
         required=True,
     )
     parser.add_argument(
+        "--encoder_cnn_config",
+        type=str,
+        default=None,
+        help="Path to a config file for the encoder cnn .",
+        required=True,
+    )
+    parser.add_argument(
         "--unet_config",
         type=str,
         default=None,

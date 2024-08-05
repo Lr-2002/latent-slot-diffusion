@@ -65,6 +65,8 @@ def log_validation(
     accelerator,
     weight_dtype,
     global_step,
+    object_encoder_cnn,
+    num_slots,
 ):
     logger.info(
         f"Running validation... \n."
@@ -72,7 +74,7 @@ def log_validation(
     unet = accelerator.unwrap_model(unet)
     backbone = accelerator.unwrap_model(backbone)
     slot_attn = accelerator.unwrap_model(slot_attn)
-
+    object_encoder_cnn = accelerator.unwrap_model(object_encoder_cnn)
     colorizer = ColorMask(
         num_slots=slot_attn.config.num_slots,
         log_img_size=256,
@@ -145,8 +147,26 @@ def log_validation(
                 feat = backbone(pixel_values_vit)
             else:
                 feat = backbone(pixel_values)
-            slots, attn = slot_attn(feat[:, None])  # for the time dimension
-            slots = slots[:, 0]
+
+            if args.use_mask:
+                logger.info('use mask to validation ')
+
+                feat = object_encoder_cnn.spatial_pos(feat)
+                masks = batch['mask'].to(feat.device)
+                mask_resized = F.interpolate(masks, size=(64, 64), mode='nearest', align_corners=None)
+                # mask_resized = mask_resized.permute(0,1,3,4,2)
+                mask_resized = [mask_resized == i for i in range(num_slots)]
+                masked_emb = [feat * mask for mask in mask_resized]
+                masked_emb = torch.stack(masked_emb, dim=0).flatten(end_dim=1)
+
+                objects_emb = object_encoder_cnn(masked_emb).reshape(-1, num_slots, args.d_model)
+                slots = object_encoder_cnn.mlp(object_encoder_cnn.layer_norm(objects_emb))
+            else:
+                slots, attn = slot_attn(feat[:, None])  # for the time dimension
+                slots = slots[:, 0]
+
+            # slots, attn = slot_attn(feat[:, None])  # for the time dimension
+            # slots = slots[:, 0]
             images_gen = pipeline(
                 prompt_embeds=slots,
                 height=args.resolution,
@@ -156,13 +176,19 @@ def log_validation(
                 guidance_scale=1.,
                 output_type="pt",
             ).images
+        if args.use_mask:
+            grid_image = colorizer.get_heatmap(img=(pixel_values * 0.5 + 0.5),
+                                               attn=torch.zeros((16,5,64,64)),
+                                               recon=[pixel_values_recon * 0.5 + 0.5,
+                                                      images_gen])  # pixel is vae decode; images_gen is slot recon
 
-        grid_image = colorizer.get_heatmap(img=(pixel_values * 0.5 + 0.5),
-                                           attn=reduce(
-                                               attn[:, 0], 'b num_h (h w) s -> b s h w', h=int(np.sqrt(attn.shape[-2])), 
-                                               reduction='mean'
-                                           ),
-                                           recon=[pixel_values_recon * 0.5 + 0.5, images_gen]) # pixel is vae decode; images_gen is slot recon
+        else:
+            grid_image = colorizer.get_heatmap(img=(pixel_values * 0.5 + 0.5),
+                                               attn=reduce(
+                                                   attn[:, 0], 'b num_h (h w) s -> b s h w', h=int(np.sqrt(attn.shape[-2])),
+                                                   reduction='mean'
+                                               ),
+                                               recon=[pixel_values_recon * 0.5 + 0.5, images_gen]) # pixel is vae decode; images_gen is slot recon
         ndarr = grid_image.mul(255).add_(0.5).clamp_(0, 255).permute(1, 2, 0).to('cpu', torch.uint8).numpy()
         im = Image.fromarray(ndarr)
         images.append(im)
@@ -277,6 +303,9 @@ def main(args):
     slot_attn_config = MultiHeadSTEVESA.load_config(args.slot_attn_config)
     slot_attn = MultiHeadSTEVESA.from_config(slot_attn_config)
 
+    object_encoder_cnn_config = EncoderCNN.load_config(args.encoder_cnn_config)
+    object_encoder_cnn = EncoderCNN.from_config(object_encoder_cnn_config)
+
     if os.path.exists(args.unet_config):
         train_unet = True
         unet_config = UNet2DConditionModelWithPos.load_config(args.unet_config)
@@ -297,7 +326,7 @@ def main(args):
             for model in models:
 
                 # continue if not one of [UNetEncoder, MultiHeadSTEVESA, UNet2DConditionModelWithPos]
-                if not isinstance(model, (UNetEncoder, MultiHeadSTEVESA, UNet2DConditionModelWithPos)):
+                if not isinstance(model, (UNetEncoder, MultiHeadSTEVESA, UNet2DConditionModelWithPos, EncoderCNN)):
                     continue
 
                 sub_dir = model._get_name().lower()
@@ -327,6 +356,11 @@ def main(args):
                 load_model = UNet2DConditionModelWithPos.from_pretrained(
                     input_dir, subfolder=sub_dir)
                 model.register_to_config(**load_model.config)
+            elif isinstance(model, EncoderCNN):
+                load_model = EncoderCNN.from_pretrained(
+                    input_dir, subfolder=sub_dir)
+                model.register_to_config(**load_model.config)
+            # todo need to load object encoder here
             else:
                 raise ValueError(
                     f"Unknown model type {type(model)}")
@@ -387,6 +421,10 @@ def main(args):
             f"Backbone loaded as datatype {accelerator.unwrap_model(backbone).dtype}. {low_precision_error_string}"
         )
 
+    if accelerator.unwrap_model(object_encoder_cnn).dtype != torch.float32:
+        raise ValueError(
+            f"Object_encoder_cnn loaded as datatype {accelerator.unwrap_model(object_encoder_cnn).dtype}. {low_precision_error_string}"
+        )
     if accelerator.unwrap_model(slot_attn).dtype != torch.float32:
         raise ValueError(
             f"Slot Attn loaded as datatype {accelerator.unwrap_model(slot_attn).dtype}. {low_precision_error_string}"
@@ -417,7 +455,6 @@ def main(args):
         optimizer_class = torch.optim.AdamW
 
 
-    object_encoder_cnn = EncoderCNN(args.hidden_size, args.d_model)
 
     params_to_optimize = list(slot_attn.parameters()) + list(object_encoder_cnn.parameters()) + \
         (list(backbone.parameters()) if train_backbone else []) + \
@@ -564,6 +601,7 @@ def main(args):
             initial_global_step = 0
         else:
             accelerator.print(f"Resuming from checkpoint {path}")
+            accelerator.print(f'the path is {os.path.join(args.output_dir, path)}')
             accelerator.load_state(os.path.join(args.output_dir, path))
             global_step = int(path.split("-")[1])
 
@@ -595,6 +633,7 @@ def main(args):
         if train_backbone:
             backbone.train()
         slot_attn.train()
+        object_encoder_cnn.train()
         for step, batch in enumerate(train_dataloader):
             pixel_values = batch["pixel_values"].to(dtype=weight_dtype)
 
@@ -639,12 +678,13 @@ def main(args):
                 feat = object_encoder_cnn.spatial_pos(feat)
                 # mask_resized = mask_resized.permute(0,1,3,4,2)
                 mask_resized = [mask_resized == i for i in range(num_slots)]
-                masked_emb = [feat  * mask for mask in mask_resized]
+                masked_emb = [feat * mask for mask in mask_resized]
                 masked_emb = torch.stack(masked_emb, dim=0).flatten(end_dim=1)
 
                 objects_emb = object_encoder_cnn(masked_emb).reshape(-1, num_slots, args.d_model)
                 slots = object_encoder_cnn.mlp(object_encoder_cnn.layer_norm(objects_emb))
             else:
+                num_slots = slot_attn_config['num_slots']
                 slots, attn = slot_attn(feat[:, None])  # for the time dimension
                 slots = slots[:, 0]
 
@@ -756,6 +796,8 @@ def main(args):
                             accelerator=accelerator,
                             weight_dtype=weight_dtype,
                             global_step=global_step,
+                            object_encoder_cnn=object_encoder_cnn,
+                            num_slots=num_slots
                         )
 
             logs = {"loss": loss.detach().item(
