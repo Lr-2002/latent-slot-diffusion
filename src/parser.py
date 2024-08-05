@@ -296,8 +296,18 @@ def parse_args(input_args=None):
         "--use_mask",
         type=bool,
         default=False,
+    )
 
+    parser.add_argument(
+        "--d_model",
+        type=int,
+        default=192
+    )
 
+    parser.add_argument(
+        '--hidden_size',
+        type=int,
+        default=192
     )
 
     if input_args is not None:

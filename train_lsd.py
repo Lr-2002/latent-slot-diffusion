@@ -40,8 +40,9 @@ from einops import rearrange, reduce, repeat
 from src.models.backbone import UNetEncoder
 from src.models.slot_attn import MultiHeadSTEVESA
 from src.models.unet_with_pos import UNet2DConditionModelWithPos
+from src.models.Encoder_CNN import EncoderCNN
 from src.data.dataset import GlobDataset_MASK
-
+from torch import nn
 from src.parser import parse_args
 
 from src.models.utils import ColorMask
@@ -416,11 +417,13 @@ def main(args):
         optimizer_class = torch.optim.AdamW
 
 
-    params_to_optimize = list(slot_attn.parameters()) + \
+    object_encoder_cnn = EncoderCNN(args.hidden_size, args.d_model)
+
+    params_to_optimize = list(slot_attn.parameters()) + list(object_encoder_cnn.parameters()) + \
         (list(backbone.parameters()) if train_backbone else []) + \
         (list(unet.parameters()) if train_unet else [])
     params_group = [
-        {'params': list(slot_attn.parameters()) + \
+        {'params': list(slot_attn.parameters())  + list(object_encoder_cnn.parameters()) + \
          (list(backbone.parameters()) if train_backbone else []),
          'lr': args.learning_rate * args.encoder_lr_scale}
     ]
@@ -479,8 +482,8 @@ def main(args):
         overrode_max_train_steps = True
 
     # Prepare everything with our `accelerator`.
-    slot_attn, optimizer, train_dataloader, lr_scheduler = accelerator.prepare(
-        slot_attn, optimizer, train_dataloader, lr_scheduler
+    slot_attn, optimizer, train_dataloader, lr_scheduler, object_encoder_cnn = accelerator.prepare(
+        slot_attn, optimizer, train_dataloader, lr_scheduler, object_encoder_cnn
     )
 
     if train_backbone:
@@ -626,8 +629,24 @@ def main(args):
                 feat = backbone(pixel_values_vit)
             else:
                 feat = backbone(pixel_values)
-            slots, attn = slot_attn(feat[:, None])  # for the time dimension
-            slots = slots[:, 0]
+            if args.use_mask:
+                config_num_slots = slot_attn_config['num_slots']
+                masks = batch['mask']
+                num_slots = int(masks.max().item()) + 1
+                assert  num_slots <= config_num_slots
+                num_slots = config_num_slots
+                mask_resized = F.interpolate(masks, size=(64, 64), mode='nearest', align_corners=None)
+                feat = object_encoder_cnn.spatial_pos(feat)
+                # mask_resized = mask_resized.permute(0,1,3,4,2)
+                mask_resized = [mask_resized == i for i in range(num_slots)]
+                masked_emb = [feat  * mask for mask in mask_resized]
+                masked_emb = torch.stack(masked_emb, dim=0).flatten(end_dim=1)
+
+                objects_emb = object_encoder_cnn(masked_emb).reshape(-1, num_slots, args.d_model)
+                slots = object_encoder_cnn.mlp(object_encoder_cnn.layer_norm(objects_emb))
+            else:
+                slots, attn = slot_attn(feat[:, None])  # for the time dimension
+                slots = slots[:, 0]
 
             if not train_unet:
                 slots = slots.to(dtype=weight_dtype)
