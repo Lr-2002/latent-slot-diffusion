@@ -173,7 +173,7 @@ def log_validation(
                 width=args.resolution,
                 num_inference_steps=25,
                 generator=generator,
-                guidance_scale=1.,
+                guidance_scale=1.5, # todo 1.5
                 output_type="pt",
             ).images
         if args.use_mask:
@@ -710,6 +710,17 @@ def main(args):
             if args.snr_gamma is None:
                 loss = F.mse_loss(model_pred.float(),
                                   target.float(), reduction="mean")
+                if torch.isnan(loss):
+                    print('nan loss', loss, 'saving all the tensor to calculate loss')
+
+                    save_path =  f"wrong_loss.pt"
+                    accelerator.save_state(save_path)
+                    logger.info(f"Saved state to {save_path}")
+                    model_pred_path = 'model_pred.pt'
+                    torch.save(model_pred.float(), model_pred_path)
+                    target_path = 'target.pt'
+                    torch.save(target.float(), target_path)
+
             else:
                 # Compute loss-weights as per Section 3.4 of https://arxiv.org/abs/2303.09556.
                 # Since we predict the noise instead of x_0, the original formulation is slightly changed.
