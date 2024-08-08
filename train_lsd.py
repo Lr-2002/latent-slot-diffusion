@@ -23,7 +23,7 @@ from huggingface_hub import create_repo
 from packaging import version
 from PIL import Image
 from tqdm.auto import tqdm
-
+from util.data import GlobVideoDataset_Mask_Movi
 import diffusers
 from diffusers import (
     AutoencoderKL,
@@ -142,7 +142,7 @@ def log_validation(
             pixel_values_recon = vae.decode(model_input).sample
 
             if args.backbone_config == "pretrain_dino":
-                pixel_values_vit = batch["pixel_values_vit"].to(device=accelerator.device, 
+                pixel_values_vit = batch["pixel_values_vit"].to(device=accelerator.device,
                                                                 dtype=weight_dtype)
                 feat = backbone(pixel_values_vit)
             else:
@@ -173,7 +173,7 @@ def log_validation(
                 width=args.resolution,
                 num_inference_steps=25,
                 generator=generator,
-                guidance_scale=1.5, # todo 1.5
+                guidance_scale=1, # todo 1.5
                 output_type="pt",
             ).images
         if args.use_mask:
@@ -482,33 +482,33 @@ def main(args):
     lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
         optimizer, lr_lambda=[lambda _: 1, lambda _: 1] if train_unet else [lambda _: 1]
         )
-
-    train_dataset = GlobDataset_MASK(
-        root=args.dataset_root,
-        img_size=args.resolution,
-        img_glob=args.dataset_glob,
-        data_portion=(0.0, args.train_split_portion),
-        vit_norm=args.backbone_config == "pretrain_dino",
-        random_flip=args.flip_images,
-        vit_input_resolution=args.vit_input_resolution
-    )
-
+    #
+    # train_dataset = GlobDataset_MASK(
+    #     root=args.dataset_root,
+    #     img_size=args.resolution,
+    #     img_glob=args.dataset_glob,
+    #     data_portion=(0.0, args.train_split_portion),
+    #     vit_norm=args.backbone_config == "pretrain_dino",
+    #     random_flip=args.flip_images,
+    #     vit_input_resolution=args.vit_input_resolution
+    # )
+    train_dataset = GlobVideoDataset_Mask_Movi('/home/lr-2002/movi_c/train/image/**.npy', 'train', img_size=128, target_shape=256, ep_len=1)
     train_dataloader = torch.utils.data.DataLoader(
         train_dataset,
         batch_size=args.train_batch_size,
         shuffle=True,
         num_workers=args.dataloader_num_workers,
     )
-
+    val_dataset = GlobVideoDataset_Mask_Movi('/home/lr-2002/movi_c/train/image/**.npy', 'val', img_size=128, target_shape=256, ep_len=1)
     # validation set is only for visualization
-    val_dataset = GlobDataset_MASK(
-        root=args.dataset_root,
-        img_size=args.resolution,
-        img_glob=args.dataset_glob,
-        data_portion=(args.train_split_portion if args.train_split_portion < 1. else 0.9, 1.0),
-        vit_norm=args.backbone_config == "pretrain_dino",
-        vit_input_resolution=args.vit_input_resolution
-    )
+    # val_dataset = GlobDataset_MASK(
+    #     root=args.dataset_root,
+    #     img_size=args.resolution,
+    #     img_glob=args.dataset_glob,
+    #     data_portion=(args.train_split_portion if args.train_split_portion < 1. else 0.9, 1.0),
+    #     vit_norm=args.backbone_config == "pretrain_dino",
+    #     vit_input_resolution=args.vit_input_resolution
+    # )
 
     # Scheduler and math around the number of training steps.
     overrode_max_train_steps = False
