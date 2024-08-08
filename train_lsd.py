@@ -492,14 +492,14 @@ def main(args):
     #     random_flip=args.flip_images,
     #     vit_input_resolution=args.vit_input_resolution
     # )
-    train_dataset = GlobVideoDataset_Mask_Movi('/home/lr-2002/movi_c/train/image/**.npy', 'train', img_size=128, target_shape=256, ep_len=1)
+    train_dataset = GlobVideoDataset_Mask_Movi(args.dataset_root, 'train', img_size=128, target_shape=256, ep_len=1)
     train_dataloader = torch.utils.data.DataLoader(
         train_dataset,
         batch_size=args.train_batch_size,
         shuffle=True,
         num_workers=args.dataloader_num_workers,
     )
-    val_dataset = GlobVideoDataset_Mask_Movi('/home/lr-2002/movi_c/train/image/**.npy', 'val', img_size=128, target_shape=256, ep_len=1)
+    val_dataset = GlobVideoDataset_Mask_Movi(args.dataset_root, 'val', img_size=128, target_shape=256, ep_len=1)
     # validation set is only for visualization
     # val_dataset = GlobDataset_MASK(
     #     root=args.dataset_root,
