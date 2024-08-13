@@ -38,11 +38,11 @@ class MultiHeadSTEVESA(ModelMixin, ConfigMixin):
             nn.ReLU(),
             nn.Linear(input_size, input_size)
             )
-        if bi_level:
-            # We tested bi_level slot attention (Jia et al. in https://arxiv.org/abs/2210.08990) at the early stage of the project,
-            # and we didn't find it helpful
-            assert learnable_slot_init, 'Bi-level training requires learnable_slot_init=True'
-
+        # if bi_level:
+        #     # We tested bi_level slot attention (Jia et al. in https://arxiv.org/abs/2210.08990) at the early stage of the project,
+        #     # and we didn't find it helpful
+        #     assert learnable_slot_init, 'Bi-level training requires learnable_slot_init=True'
+        #
         self.num_iterations = num_iterations
         self.num_slots = num_slots
         self.num_heads = num_heads
@@ -133,9 +133,10 @@ class MultiHeadSTEVESA(ModelMixin, ConfigMixin):
             # corrector iterations
             for i in range(self.num_iterations):
                 if self.bi_level and i == self.num_iterations - 1:
-                    slots = slots.detach() + self.slot_mu - self.slot_mu.detach() 
-                    # TODO  run latter 
-                    # slots  = slots.detach() + input_slots - input_slots.detach()
+                    if inputs_slots is not None:
+                        slots = slots.detach() + inputs_slots - inputs_slots.detach()
+                    else:
+                        slots = slots.detach() + self.slot_mu - self.slot_mu.detach()
                 slots_prev = slots
                 slots = self.norm_slots(slots)
 
