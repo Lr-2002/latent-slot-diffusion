@@ -133,7 +133,9 @@ class MultiHeadSTEVESA(ModelMixin, ConfigMixin):
             # corrector iterations
             for i in range(self.num_iterations):
                 if self.bi_level and i == self.num_iterations - 1:
-                    slots = slots.detach() + self.slot_mu - self.slot_mu.detach()
+                    slots = slots.detach() + self.slot_mu - self.slot_mu.detach() 
+                    # TODO  run latter 
+                    # slots  = slots.detach() + input_slots - input_slots.detach()
                 slots_prev = slots
                 slots = self.norm_slots(slots)
 
