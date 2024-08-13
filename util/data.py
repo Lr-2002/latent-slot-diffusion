@@ -263,6 +263,11 @@ class GlobVideoDataset_Mask_Movi(Dataset):
                 transforms.ToTensor()
             ]
         )
+        self.only_resize = transforms.Compose(
+            [
+                transforms.Resize((self.target_shape, self.target_shape)),
+            ]
+        )
 
     def __len__(self):
         return len(self.episodes)
@@ -296,7 +301,8 @@ class GlobVideoDataset_Mask_Movi(Dataset):
             tensor_image = self.transform(image)
             # mask = transforms.Resize((self.img_size, self.img_size))(mask)
             # mask = torch.Tensor(mask)
-            mask = self.transform(mask)
+            # mask = self.transform(mask)
+            mask = transforms.functional.pil_to_tensor(self.only_resize(mask))
             video_mask += [mask]
             video += [tensor_image]
 

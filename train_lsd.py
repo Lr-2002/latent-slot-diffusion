@@ -151,8 +151,9 @@ def log_validation(
             if args.use_mask:
                 logger.info('use mask to validation ')
 
-                feat = object_encoder_cnn.spatial_pos(feat)
                 masks = batch['mask'].to(feat.device)
+                num_slots = int(masks.max().item()) + 1
+                feat = object_encoder_cnn.spatial_pos(feat)
                 mask_resized = F.interpolate(masks, size=(64, 64), mode='nearest', align_corners=None)
                 # mask_resized = mask_resized.permute(0,1,3,4,2)
                 mask_resized = [mask_resized == i for i in range(num_slots)]
@@ -161,6 +162,7 @@ def log_validation(
 
                 objects_emb = object_encoder_cnn(masked_emb).reshape(-1, num_slots, args.d_model)
                 slots = object_encoder_cnn.mlp(object_encoder_cnn.layer_norm(objects_emb))
+
             else:
                 slots, attn = slot_attn(feat[:, None])  # for the time dimension
                 slots = slots[:, 0]
@@ -669,11 +671,11 @@ def main(args):
             else:
                 feat = backbone(pixel_values)
             if args.use_mask:
-                config_num_slots = slot_attn_config['num_slots']
+                # config_num_slots = slot_attn_config['num_slots']
                 masks = batch['mask']
                 num_slots = int(masks.max().item()) + 1
-                assert  num_slots <= config_num_slots
-                num_slots = config_num_slots
+                # assert  num_slots <= config_num_slots
+                # num_slots = config_num_slots
                 mask_resized = F.interpolate(masks, size=(64, 64), mode='nearest', align_corners=None)
                 feat = object_encoder_cnn.spatial_pos(feat)
                 # mask_resized = mask_resized.permute(0,1,3,4,2)
@@ -681,7 +683,7 @@ def main(args):
                 masked_emb = [feat * mask for mask in mask_resized]
                 masked_emb = torch.stack(masked_emb, dim=0).flatten(end_dim=1)
 
-                objects_emb = object_encoder_cnn(masked_emb).reshape(-1, num_slots, args.d_model)
+                objects_emb = object_encoder_cnn(masked_emb).reshape(-1, num_slots, args.d_model) # TODO Why no update ? 
                 slots = object_encoder_cnn.mlp(object_encoder_cnn.layer_norm(objects_emb))
             else:
                 num_slots = slot_attn_config['num_slots']
