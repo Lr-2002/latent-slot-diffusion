@@ -162,7 +162,8 @@ def log_validation(
 
                 objects_emb = object_encoder_cnn(masked_emb).reshape(-1, num_slots, args.d_model)
                 slots = object_encoder_cnn.mlp(object_encoder_cnn.layer_norm(objects_emb))
-
+                slots, attn = slot_attn(feat[:, None], slots)
+                slots = slots[:, 0]
             else:
                 slots, attn = slot_attn(feat[:, None])  # for the time dimension
                 slots = slots[:, 0]
@@ -178,19 +179,12 @@ def log_validation(
                 guidance_scale=1, # todo 1.5
                 output_type="pt",
             ).images
-        if args.use_mask:
-            grid_image = colorizer.get_heatmap(img=(pixel_values * 0.5 + 0.5),
-                                               attn=torch.zeros((16,5,64,64)),
-                                               recon=[pixel_values_recon * 0.5 + 0.5,
-                                                      images_gen])  # pixel is vae decode; images_gen is slot recon
-
-        else:
-            grid_image = colorizer.get_heatmap(img=(pixel_values * 0.5 + 0.5),
-                                               attn=reduce(
-                                                   attn[:, 0], 'b num_h (h w) s -> b s h w', h=int(np.sqrt(attn.shape[-2])),
-                                                   reduction='mean'
-                                               ),
-                                               recon=[pixel_values_recon * 0.5 + 0.5, images_gen]) # pixel is vae decode; images_gen is slot recon
+        grid_image = colorizer.get_heatmap(img=(pixel_values * 0.5 + 0.5),
+                                           attn=reduce(
+                                               attn[:, 0], 'b num_h (h w) s -> b s h w', h=int(np.sqrt(attn.shape[-2])),
+                                               reduction='mean'
+                                           ),
+                                           recon=[pixel_values_recon * 0.5 + 0.5, images_gen]) # pixel is vae decode; images_gen is slot recon
         ndarr = grid_image.mul(255).add_(0.5).clamp_(0, 255).permute(1, 2, 0).to('cpu', torch.uint8).numpy()
         im = Image.fromarray(ndarr)
         images.append(im)
@@ -671,20 +665,18 @@ def main(args):
             else:
                 feat = backbone(pixel_values)
             if args.use_mask:
-                # config_num_slots = slot_attn_config['num_slots']
                 masks = batch['mask']
                 num_slots = int(masks.max().item()) + 1
-                # assert  num_slots <= config_num_slots
-                # num_slots = config_num_slots
                 mask_resized = F.interpolate(masks, size=(64, 64), mode='nearest', align_corners=None)
                 feat = object_encoder_cnn.spatial_pos(feat)
-                # mask_resized = mask_resized.permute(0,1,3,4,2)
                 mask_resized = [mask_resized == i for i in range(num_slots)]
                 masked_emb = [feat * mask for mask in mask_resized]
                 masked_emb = torch.stack(masked_emb, dim=0).flatten(end_dim=1)
 
                 objects_emb = object_encoder_cnn(masked_emb).reshape(-1, num_slots, args.d_model) # TODO Why no update ? 
                 slots = object_encoder_cnn.mlp(object_encoder_cnn.layer_norm(objects_emb))
+                slots, attn = slot_attn(feat[:, None], slots)
+                slots = slots[:, 0]
             else:
                 num_slots = slot_attn_config['num_slots']
                 slots, attn = slot_attn(feat[:, None])  # for the time dimension

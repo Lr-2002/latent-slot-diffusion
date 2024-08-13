@@ -27,7 +27,8 @@ class MultiHeadSTEVESA(ModelMixin, ConfigMixin):
                  input_size, out_size, slot_size, mlp_hidden_size, 
                  input_resolution, epsilon=1e-8, 
                  learnable_slot_init=False, 
-                 bi_level=False):
+                 bi_level=False,
+                 input_slots=False):
         super().__init__()
 
         self.pos = CartesianPositionalEmbedding(input_size, input_resolution)
@@ -45,6 +46,7 @@ class MultiHeadSTEVESA(ModelMixin, ConfigMixin):
         self.num_iterations = num_iterations
         self.num_slots = num_slots
         self.num_heads = num_heads
+        self.input_slots = input_slots
         self.input_size = input_size
         self.slot_size = slot_size
         self.mlp_hidden_size = mlp_hidden_size
@@ -84,13 +86,16 @@ class MultiHeadSTEVESA(ModelMixin, ConfigMixin):
         self.out_layer_norm = nn.LayerNorm(slot_size)
         self.out_linear = nn.Linear(slot_size, out_size)
         
-    def forward(self, inputs):
-        slots_collect, attns_collect = self.forward_slots(inputs)
+    def forward(self, inputs, inputs_slots):
+        slots_collect, attns_collect = self.forward_slots(inputs, inputs_slots)
         slots_collect = self.out_layer_norm(slots_collect)
         slots_collect = self.out_linear(slots_collect)
         return slots_collect, attns_collect
 
-    def forward_slots(self, inputs):
+    def update_num_slots(self, num_slots):
+        self.num_slots = num_slots
+
+    def forward_slots(self, inputs, inputs_slots=None):
         """
         inputs: batch_size x seq_len x input_size x h x w
         return: batch_size x num_slots x slot_size
@@ -101,13 +106,17 @@ class MultiHeadSTEVESA(ModelMixin, ConfigMixin):
         inputs = self.in_mlp(self.in_layer_norm(inputs))
 
         # num_inputs = h * w
-
-        if self.learnable_slot_init:
-            slots = repeat(self.slot_mu, '1 num_s d -> b num_s d', b=B)
+        if self.input_slots == True:
+            assert inputs_slots is not None
+            slots = inputs_slots
+            self.num_slots = slots.size(1)
         else:
-            # initialize slots
-            slots = inputs.new_empty(B, self.num_slots, self.slot_size).normal_()
-            slots = self.slot_mu + torch.exp(self.slot_log_sigma) * slots
+            if self.learnable_slot_init:
+                slots = repeat(self.slot_mu, '1 num_s d -> b num_s d', b=B)
+            else:
+                # initialize slots
+                slots = inputs.new_empty(B, self.num_slots, self.slot_size).normal_()
+                slots = self.slot_mu + torch.exp(self.slot_log_sigma) * slots
 
         # setup key and value
         inputs = self.norm_inputs(inputs)
