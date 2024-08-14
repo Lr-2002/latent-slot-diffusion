@@ -676,8 +676,18 @@ def main(args):
 
                 objects_emb = object_encoder_cnn(masked_emb).reshape(-1, num_slots, args.d_model) # TODO Why no update ? 
                 slots = object_encoder_cnn.mlp(object_encoder_cnn.layer_norm(objects_emb))
+                # slots = object_encoder_cnn.mlp(object_encoder_cnn.layer_norm(objects_emb) + objects_emb ) # TODO use this if maskloss is not working
+
+                # replace slots with gaussian noise
+                need_to_replace = torch.stack([mask.sum(dim=(2, 3)) == 0 for mask in mask_resized]).permute(1,0,2).to(torch.int)
+                slots = slots * (1 - need_to_replace) + torch.randn_like(slots) * need_to_replace
+
+                # calculate slots
                 slots, attn, attn_logits = slot_attn(feat[:, None], slots, need_logits=True)
                 slots = slots[:, 0]
+
+
+                # calculate mask loss
                 reshaped_masks = torch.stack(mask_resized).squeeze(dim=2).permute(1,2,3,0).flatten(1,2).to(torch.float32)
                 attn_logits_flatten= attn.squeeze(1).squeeze(1)
                 bce_loss = bce_loss_calculator(reshaped_masks, attn_logits_flatten)
