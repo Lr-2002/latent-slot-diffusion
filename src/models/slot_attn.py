@@ -86,16 +86,22 @@ class MultiHeadSTEVESA(ModelMixin, ConfigMixin):
         self.out_layer_norm = nn.LayerNorm(slot_size)
         self.out_linear = nn.Linear(slot_size, out_size)
         
-    def forward(self, inputs, inputs_slots):
-        slots_collect, attns_collect = self.forward_slots(inputs, inputs_slots)
+    def forward(self, inputs, inputs_slots, need_logits=False):
+        if need_logits :
+            slots_collect, attns_collect, attns_logits= self.forward_slots(inputs, inputs_slots, need_logits)
+        else:
+            slots_collect, attns_collect = self.forward_slots(inputs, inputs_slots)
         slots_collect = self.out_layer_norm(slots_collect)
         slots_collect = self.out_linear(slots_collect)
-        return slots_collect, attns_collect
+        if need_logits:
+            return slots_collect, attns_collect, attns_logits
+        else:
+            return slots_collect, attns_collect
 
     def update_num_slots(self, num_slots):
         self.num_slots = num_slots
 
-    def forward_slots(self, inputs, inputs_slots=None):
+    def forward_slots(self, inputs, inputs_slots=None, need_logits=False):
         """
         inputs: batch_size x seq_len x input_size x h x w
         return: batch_size x num_slots x slot_size
@@ -170,7 +176,8 @@ class MultiHeadSTEVESA(ModelMixin, ConfigMixin):
 
         attns_collect = torch.stack(attns_collect, dim=1)  # B, T, num_inputs, num_slots
         slots_collect = torch.stack(slots_collect, dim=1)  # B, T, num_slots, slot_size
-
+        if need_logits:
+            return  slots_collect, attns_collect, attn_logits
         return slots_collect, attns_collect
 
 if __name__ == "__main__":

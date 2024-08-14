@@ -616,7 +616,7 @@ def main(args):
         disable=not accelerator.is_local_main_process,
         position=0, leave=True
     )
-
+    bce_loss_calculator = nn.BCELoss()
     for epoch in range(first_epoch, args.num_train_epochs):
         """
         1. where is the noise added 
@@ -629,6 +629,7 @@ def main(args):
         if train_backbone:
             backbone.train()
         slot_attn.train()
+        bce_loss = None
         object_encoder_cnn.train()
         for step, batch in enumerate(train_dataloader):
             pixel_values = batch["pixel_values"].to(dtype=weight_dtype)
@@ -675,8 +676,11 @@ def main(args):
 
                 objects_emb = object_encoder_cnn(masked_emb).reshape(-1, num_slots, args.d_model) # TODO Why no update ? 
                 slots = object_encoder_cnn.mlp(object_encoder_cnn.layer_norm(objects_emb))
-                slots, attn = slot_attn(feat[:, None], slots)
+                slots, attn, attn_logits = slot_attn(feat[:, None], slots, need_logits=True)
                 slots = slots[:, 0]
+                reshaped_masks = torch.stack(mask_resized).squeeze(dim=2).permute(1,2,3,0).flatten(1,2).to(torch.float32)
+                attn_logits_flatten= attn.squeeze(1).squeeze(1)
+                bce_loss = bce_loss_calculator(reshaped_masks, attn_logits_flatten)
             else:
                 num_slots = slot_attn_config['num_slots']
                 slots, attn = slot_attn(feat[:, None])  # for the time dimension
@@ -704,6 +708,8 @@ def main(args):
             if args.snr_gamma is None:
                 loss = F.mse_loss(model_pred.float(),
                                   target.float(), reduction="mean")
+                if bce_loss is not None:
+                    loss += bce_loss
                 if torch.isnan(loss):
                     print('nan loss', loss, 'saving all the tensor to calculate loss')
 
