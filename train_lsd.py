@@ -617,6 +617,7 @@ def main(args):
         position=0, leave=True
     )
     bce_loss_calculator = nn.BCELoss()
+    loss_calculator = nn.Sigmoid()
     for epoch in range(first_epoch, args.num_train_epochs):
         """
         1. where is the noise added 
@@ -690,7 +691,8 @@ def main(args):
                 # calculate mask loss
                 reshaped_masks = torch.stack(mask_resized).squeeze(dim=2).permute(1,2,3,0).flatten(1,2).to(torch.float32)
                 attn_logits_flatten= attn.squeeze(1).squeeze(1)
-                bce_loss = bce_loss_calculator(reshaped_masks, attn_logits_flatten)
+                # attn_logits_flatten= attn_logits.squeeze(1)
+                bce_loss = bce_loss_calculator(attn_logits_flatten, reshaped_masks)
             else:
                 num_slots = slot_attn_config['num_slots']
                 slots, attn = slot_attn(feat[:, None])  # for the time dimension
