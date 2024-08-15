@@ -623,6 +623,7 @@ def main(args):
         position=0, leave=True
     )
     bce_loss_calculator = nn.BCELoss()
+    loss_calculator = nn.Sigmoid()
     for epoch in range(first_epoch, args.num_train_epochs):
         """
         1. where is the noise added 
