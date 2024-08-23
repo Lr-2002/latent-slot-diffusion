@@ -162,10 +162,10 @@ def log_validation(
 
                 objects_emb = object_encoder_cnn(masked_emb).reshape(-1, num_slots, args.d_model)
                 slots = object_encoder_cnn.mlp(object_encoder_cnn.layer_norm(objects_emb))
-                # add empty here 
+                # add empty here
                 # replace slots with gaussian noise
                 need_to_replace = torch.stack([mask.sum(dim=(2, 3)) == 0 for mask in mask_resized]).permute(1,0,2).to(torch.int)
-                slots = slots * (1 - need_to_replace) + slot_attn.empty_slot.expand(*slots.shape) * need_to_replace
+                slots = slots * (1 - need_to_replace) + slot_attn.empty_slot.expand(*slots.shape).to(slots.device) * need_to_replace
 
 
                 slots, attn = slot_attn(feat[:, None], slots)
@@ -653,7 +653,7 @@ def main(args):
             else:
                 noise = torch.randn_like(model_input)
             bsz, channels, height, width = model_input.shape
-            # Sample a random timestep for each image
+            # Samplefalseandom timestep for each image
             timesteps = torch.randint(
                 0, noise_scheduler.config.num_train_timesteps, (bsz,), device=model_input.device
             )
@@ -687,7 +687,7 @@ def main(args):
 
                 # replace slots with gaussian noise
                 need_to_replace = torch.stack([mask.sum(dim=(2, 3)) == 0 for mask in mask_resized]).permute(1,0,2).to(torch.int)
-                slots = slots * (1 - need_to_replace) + slot_attn.empty_slot.expand(*slots.shape) * need_to_replace
+                slots = slots * (1 - need_to_replace) + slot_attn.empty_slot.expand(*slots.shape).to(slots.device) *  need_to_replace
 
                 # calculate slots
                 slots, attn, attn_logits = slot_attn(feat[:, None], slots, need_logits=True)
@@ -697,9 +697,8 @@ def main(args):
                 # calculate mask loss
                 reshaped_masks = torch.stack(mask_resized).squeeze(dim=2).permute(1,2,3,0).flatten(1,2).to(torch.float32)
                 attn_logits_flatten= attn.squeeze(1).squeeze(1)
-                # bce_loss = bce_loss_calculator(reshaped_masks, attn_logits_flatten)
+                # attn_logits_flatten= attn_logits.squeeze(1)
                 bce_loss = bce_loss_calculator(attn_logits_flatten, reshaped_masks)
-
             else:
                 num_slots = slot_attn_config['num_slots']
                 slots, attn = slot_attn(feat[:, None])  # for the time dimension
@@ -727,6 +726,7 @@ def main(args):
             if args.snr_gamma is None:
                 loss = F.mse_loss(model_pred.float(),
                                   target.float(), reduction="mean")
+                original_loss = loss
                 if bce_loss is not None:
                     loss += bce_loss
                 if torch.isnan(loss):
@@ -831,7 +831,8 @@ def main(args):
                         )
 
             logs = {"loss": loss.detach().item(
-            ), "lr": lr_scheduler.get_last_lr()[0]}
+            ), "lr": lr_scheduler.get_last_lr()[0], "mask_loss": bce_loss.detach().item() ,
+            "recon_loss": original_loss.detach().item()}
             progress_bar.set_postfix(**logs)
             accelerator.log(logs, step=global_step)
 
