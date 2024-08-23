@@ -260,7 +260,8 @@ class GlobVideoDataset_Mask_Movi(Dataset):
         self.transform = transforms.Compose(
             [
                 transforms.Resize((self.target_shape, self.target_shape)),
-                transforms.ToTensor()
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.5], std=[0.5])
             ]
         )
         self.only_resize = transforms.Compose(

@@ -698,7 +698,7 @@ def main(args):
                 reshaped_masks = torch.stack(mask_resized).squeeze(dim=2).permute(1,2,3,0).flatten(1,2).to(torch.float32)
                 attn_logits_flatten= attn.squeeze(1).squeeze(1)
                 # attn_logits_flatten= attn_logits.squeeze(1)
-                bce_loss = bce_loss_calculator(attn_logits_flatten, reshaped_masks)
+                # bce_loss = bce_loss_calculator(attn_logits_flatten, reshaped_masks)
             else:
                 num_slots = slot_attn_config['num_slots']
                 slots, attn = slot_attn(feat[:, None])  # for the time dimension
@@ -726,7 +726,7 @@ def main(args):
             if args.snr_gamma is None:
                 loss = F.mse_loss(model_pred.float(),
                                   target.float(), reduction="mean")
-                original_loss = loss
+                original_loss = loss.clone()
                 if bce_loss is not None:
                     loss += bce_loss
                 if torch.isnan(loss):
@@ -829,10 +829,14 @@ def main(args):
                             object_encoder_cnn=object_encoder_cnn,
                             num_slots=num_slots
                         )
-
-            logs = {"loss": loss.detach().item(
-            ), "lr": lr_scheduler.get_last_lr()[0], "mask_loss": bce_loss.detach().item() ,
-            "recon_loss": original_loss.detach().item()}
+            if bce_loss is not None:
+                logs = {"loss": loss.detach().item(
+                ), "lr": lr_scheduler.get_last_lr()[0], "mask_loss": bce_loss.detach().item() ,
+                "recon_loss": original_loss.detach().item()}
+            else:
+                logs = {"loss": loss.detach().item(
+                ), "lr": lr_scheduler.get_last_lr()[0],
+                "recon_loss": original_loss.detach().item()}
             progress_bar.set_postfix(**logs)
             accelerator.log(logs, step=global_step)
 
