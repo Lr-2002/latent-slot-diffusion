@@ -275,12 +275,19 @@ def log_validation(
                 guidance_scale=1, # todo 1.5
                 output_type="pt",
             ).images
-        grid_image = colorizer.get_heatmap(img=(pixel_values * 0.5 + 0.5),
-                                           attn=reduce(
-                                               attn[:, 0], 'b num_h (h w) s -> b s h w', h=int(np.sqrt(attn.shape[-2])),
-                                               reduction='mean'
-                                           ),
-                                           recon=[pixel_values_recon * 0.5 + 0.5, images_gen]) # pixel is vae decode; images_gen is slot recon
+        if args.use_roi:
+            grid_image = colorizer.get_heatmap(img=(pixel_values * 0.5 + 0.5),
+                                               attn=torch.zeros((16,5,64,64)),
+                                               recon=[pixel_values_recon * 0.5 + 0.5,
+                                                      images_gen])  # pixel is vae decode; images_gen is slot recon
+
+        else:
+            grid_image = colorizer.get_heatmap(img=(pixel_values * 0.5 + 0.5),
+                                               attn=reduce(
+                                                   attn[:, 0], 'b num_h (h w) s -> b s h w', h=int(np.sqrt(attn.shape[-2])),
+                                                   reduction='mean'
+                                               ),
+                                               recon=[pixel_values_recon * 0.5 + 0.5, images_gen]) # pixel is vae decode; images_gen is slot recon
         ndarr = grid_image.mul(255).add_(0.5).clamp_(0, 255).permute(1, 2, 0).to('cpu', torch.uint8).numpy()
         im = Image.fromarray(ndarr)
         images.append(im)
