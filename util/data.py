@@ -225,7 +225,7 @@ class GlobImageDataset_Mask_Movi(Dataset):
 
 class GlobVideoDataset_Mask_Movi(Dataset):
     def __init__(self, root, phase, img_size, ep_len=3, img_glob='*.npy', random_crop=False, crop_ratio=0.8,
-                 step_size=1, is_random_order=False, mode='image', target_shape=None):
+                 step_size=1, is_random_order=False, mode='image', target_shape=None, vit_norm=False, vit_input_resolution=448):
         self.root = root
         self.img_size = img_size
         self.random_crop = random_crop
@@ -245,6 +245,19 @@ class GlobVideoDataset_Mask_Movi(Dataset):
             self.total_paths = self.total_paths[int(len(self.total_paths) * 0.95):]
         else:
             pass
+
+        self.vit_norm = vit_norm
+        if vit_norm:
+            self.transform_vit = transforms.Compose([
+                transforms.Resize(vit_input_resolution,
+                                  interpolation=transforms.InterpolationMode.BILINEAR),
+                transforms.CenterCrop(vit_input_resolution),
+                transforms.Normalize(
+                    mean=[0.485, 0.456, 0.406],
+                    std=[0.229, 0.224, 0.225]
+                )
+            ])
+
         self.total_frame_num = numpy.load(self.total_paths[0]).shape[0]
         self.episodes = []
         for file in self.total_paths:
@@ -275,6 +288,7 @@ class GlobVideoDataset_Mask_Movi(Dataset):
 
     def __getitem__(self, idx):
         video = []
+        video_vit = []
         video_mask = []
         t, l, h, w = None, None, None, None
         (img_loc, frame_idxs) = self.episodes[idx]
@@ -300,6 +314,8 @@ class GlobVideoDataset_Mask_Movi(Dataset):
                 # print('use crop, image size: ', image.size)
             # print('image_size is {}'.format(image.size))
             tensor_image = self.transform(image)
+            if self.vit_norm == True:
+                video_vit +=[self.transform_vit(tensor_image)]
             # mask = transforms.Resize((self.img_size, self.img_size))(mask)
             # mask = torch.Tensor(mask)
             # mask = self.transform(mask)
@@ -309,9 +325,14 @@ class GlobVideoDataset_Mask_Movi(Dataset):
 
         video = torch.stack(video, dim=0)
         video_mask = torch.stack(video_mask, dim=0)
+        if self.vit_norm == True:
+            video_vit = torch.stack(video_vit, dim=0)
         if self.ep_len == 1 and self.mode == 'image':  # image mode, reshape from B,1,C,H,W to B,H,W,C
             video = video.flatten(0, 1)
             video_mask = video_mask.flatten(0, 1)
+            if self.vit_norm == True:
+                video_vit = video_vit.flatten(0, 1)
+                return {'pixel_values': video, 'mask': video_mask, 'pixel_values_vit': video_vit}
         return {'pixel_values': video, 'mask': video_mask}
 
 class GlobImageDataset_Mask(Dataset):

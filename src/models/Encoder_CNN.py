@@ -84,7 +84,7 @@ class CartesianPositionalEmbedding(nn.Module):
 
 class EncoderCNN( ModelMixin, ConfigMixin):
     @register_to_config
-    def __init__(self, cnn_hidden_size, d_model):
+    def __init__(self, cnn_hidden_size, d_model, bbx_shape=4, pos_emb_shape = 512, slots_input_shape=768, slots_shape = 1024):
         super().__init__()
         self.object_encoder_cnn = nn.Sequential(
             BatchNormConvBlock(cnn_hidden_size, cnn_hidden_size, 7, 3, 0),
@@ -98,6 +98,16 @@ class EncoderCNN( ModelMixin, ConfigMixin):
 
         self.spatial_pos = CartesianPositionalEmbedding(cnn_hidden_size, 64)
         self.layer_norm = nn.LayerNorm(d_model)
+
+        self.bbx_to_pos = nn.Sequential(
+            linear(bbx_shape , pos_emb_shape, weight_init='kaiming'),
+            nn.ReLU(),
+            linear(pos_emb_shape, pos_emb_shape))
+
+        self.cat_to_slots = nn.Sequential(
+            linear(slots_input_shape + pos_emb_shape, slots_shape, weight_init='kaiming'),
+            nn.ReLU(),
+            linear(slots_shape, slots_shape))
 
     def forward(self, x):
         return self.object_encoder_cnn(x)

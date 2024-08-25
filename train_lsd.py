@@ -10,7 +10,7 @@ import os
 import shutil
 import warnings
 from pathlib import Path
-
+from torchvision.ops import roi_align
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -52,6 +52,94 @@ if is_wandb_available():
 
 logger = get_logger(__name__)
 
+
+def dino_in_slots_out(batch, feat, object_encoder_cnn):
+    if args.use_roi:
+        masks = batch['mask']
+        num_slots = int(masks.max().item()) + 1
+        mask_resized = F.interpolate(masks, size=(32, 32), mode='nearest', align_corners=None)
+        masks = mask_resized
+        all_rois = []
+        num_roi_per_batch = []
+        # Loop over each image in the batch
+        for batch_idx in range(masks.shape[0]):
+            mask = masks[batch_idx, 0]  # Extract mask for the current image, shape [32, 32]
+
+            # Initialize a list to hold RoIs for the current image
+            rois = []
+
+            # Loop over each unique class in the mask (excluding background class 0)
+            for class_idx in mask.unique():
+                if class_idx == 0:
+                    continue  # Skip background class if present
+
+                # Create a binary mask for the current class
+                class_mask = (mask == class_idx).nonzero(as_tuple=False)
+
+                if class_mask.numel() == 0:
+                    continue  # Skip if no pixels for this class
+
+                # Extract the bounding box for the current class
+                y1, x1 = class_mask[:, 0].min().item(), class_mask[:, 1].min().item()
+                y2, x2 = class_mask[:, 0].max().item(), class_mask[:, 1].max().item()
+
+                # Append the RoI in the format [batch_index, x1, y1, x2, y2]
+                rois.append([batch_idx, x1, y1, x2, y2])
+
+            # Append the RoIs for the current image to the all_rois list
+            all_rois.extend(rois)
+            num_roi_per_batch.append(len(rois))
+
+        # Convert all RoIs to a tensor
+        all_rois = torch.tensor(all_rois, dtype=torch.float16, device=feat.device)
+        max_rois = num_slots
+        # Desired output size for each RoI
+        output_size = (2, 2)  # 2x2 output
+
+        # Apply RoIAlign
+        aligned_features = roi_align(
+            input=feat,
+            boxes=all_rois,
+            output_size=output_size,
+            spatial_scale=1.0,  # Assuming feature map and mask are at the same scale
+            sampling_ratio=-1  # Use adaptive sampling
+        )
+
+        # `aligned_features` will have the shape [num_rois, channels, output_height, output_width]
+        # print(aligned_features.shape)  # Expected output: [num_rois, 768, 2, 2]
+
+        # Initialize the padded output tensor with zeros
+        batch_size = feat.size(0)
+        channels = feat.size(1)
+        output_shape = (batch_size, max_rois, channels, output_size[0], output_size[1])
+
+        padded_aligned_features = torch.zeros(output_shape)
+        padded_rois = torch.zeros((batch_size, max_rois, 4))
+        # Track the current index in `aligned_features`
+        current_index = 0
+
+        # Loop through each batch to place aligned features in the padded tensor
+        for batch_idx in range(batch_size):
+            num_rois = num_roi_per_batch[batch_idx]
+
+            if num_rois > 0:
+                # Extract features for current batch
+                batch_features = aligned_features[current_index:current_index + num_rois]
+                batch_rois = all_rois[current_index:current_index + num_rois, 1:]
+                # Place them in the padded tensor
+                padded_aligned_features[batch_idx, :num_rois] = batch_features
+                padded_rois[batch_idx, :num_rois] = batch_rois
+                # Update the current index
+                current_index += num_rois
+
+        # `padded_aligned_features` shape: [batch_size, max_rois, 768, 2, 2]
+        # print(padded_aligned_features.shape)  # Expected output: [16, max_rois, 768, 2, 2]
+        pos_emb = object_encoder_cnn.bbx_to_pos(padded_rois.to(object_encoder_cnn.device))
+        pos_emb = pos_emb.unsqueeze(-1).repeat(1, 1, 1, 4)
+        flatten_slots = padded_aligned_features.flatten(-2)
+        cated_slots = torch.cat([flatten_slots.to(pos_emb.device), pos_emb], dim=-2).permute(0, 1, 3, 2)
+        slots = object_encoder_cnn.cat_to_slots(cated_slots).flatten(1,2)
+        return slots, num_slots
 
 @torch.no_grad()
 def log_validation(
@@ -147,32 +235,34 @@ def log_validation(
                 feat = backbone(pixel_values_vit)
             else:
                 feat = backbone(pixel_values)
-
-            if args.use_mask:
-                logger.info('use mask to validation ')
-
-                masks = batch['mask'].to(feat.device)
-                num_slots = int(masks.max().item()) + 1
-                feat = object_encoder_cnn.spatial_pos(feat)
-                mask_resized = F.interpolate(masks, size=(64, 64), mode='nearest', align_corners=None)
-                # mask_resized = mask_resized.permute(0,1,3,4,2)
-                mask_resized = [mask_resized == i for i in range(num_slots)]
-                masked_emb = [feat * mask for mask in mask_resized]
-                masked_emb = torch.stack(masked_emb, dim=0).flatten(end_dim=1)
-
-                objects_emb = object_encoder_cnn(masked_emb).reshape(-1, num_slots, args.d_model)
-                slots = object_encoder_cnn.mlp(object_encoder_cnn.layer_norm(objects_emb))
-                # add empty here
-                # replace slots with gaussian noise
-                need_to_replace = torch.stack([mask.sum(dim=(2, 3)) == 0 for mask in mask_resized]).permute(1,0,2).to(torch.int)
-                slots = slots * (1 - need_to_replace) + slot_attn.empty_slot.expand(*slots.shape).to(slots.device) * need_to_replace
-
-
-                slots, attn = slot_attn(feat[:, None], slots)
-                slots = slots[:, 0]
+            if args.use_roi:
+                slots, num_slots = dino_in_slots_out(batch, feat, object_encoder_cnn)
             else:
-                slots, attn = slot_attn(feat[:, None])  # for the time dimension
-                slots = slots[:, 0]
+                if args.use_mask:
+                    logger.info('use mask to validation ')
+
+                    masks = batch['mask'].to(feat.device)
+                    num_slots = int(masks.max().item()) + 1
+                    feat = object_encoder_cnn.spatial_pos(feat)
+                    mask_resized = F.interpolate(masks, size=(64, 64), mode='nearest', align_corners=None)
+                    # mask_resized = mask_resized.permute(0,1,3,4,2)
+                    mask_resized = [mask_resized == i for i in range(num_slots)]
+                    masked_emb = [feat * mask for mask in mask_resized]
+                    masked_emb = torch.stack(masked_emb, dim=0).flatten(end_dim=1)
+
+                    objects_emb = object_encoder_cnn(masked_emb).reshape(-1, num_slots, args.d_model)
+                    slots = object_encoder_cnn.mlp(object_encoder_cnn.layer_norm(objects_emb))
+                    # add empty here
+                    # replace slots with gaussian noise
+                    need_to_replace = torch.stack([mask.sum(dim=(2, 3)) == 0 for mask in mask_resized]).permute(1,0,2).to(torch.int)
+                    slots = slots * (1 - need_to_replace) + slot_attn.empty_slot.expand(*slots.shape).to(slots.device) * need_to_replace
+
+
+                    slots, attn = slot_attn(feat[:, None], slots)
+                    slots = slots[:, 0]
+                else:
+                    slots, attn = slot_attn(feat[:, None])  # for the time dimension
+                    slots = slots[:, 0]
 
             # slots, attn = slot_attn(feat[:, None])  # for the time dimension
             # slots = slots[:, 0]
@@ -218,7 +308,6 @@ def log_validation(
     torch.cuda.empty_cache()
 
     return images
-
 
 def main(args):
     logging_dir = Path(args.output_dir, args.logging_dir)
@@ -494,14 +583,14 @@ def main(args):
     #     random_flip=args.flip_images,
     #     vit_input_resolution=args.vit_input_resolution
     # )
-    train_dataset = GlobVideoDataset_Mask_Movi(args.dataset_root, 'train', img_size=128, target_shape=256, ep_len=1)
+    train_dataset = GlobVideoDataset_Mask_Movi(args.dataset_root, 'train', img_size=128, target_shape=256, ep_len=1, vit_norm=True)
     train_dataloader = torch.utils.data.DataLoader(
         train_dataset,
         batch_size=args.train_batch_size,
         shuffle=True,
         num_workers=args.dataloader_num_workers,
     )
-    val_dataset = GlobVideoDataset_Mask_Movi(args.dataset_root, 'val', img_size=128, target_shape=256, ep_len=1)
+    val_dataset = GlobVideoDataset_Mask_Movi(args.dataset_root, 'val', img_size=128, target_shape=256, ep_len=1, vit_norm=True)
     # validation set is only for visualization
     # val_dataset = GlobDataset_MASK(
     #     root=args.dataset_root,
@@ -672,37 +761,40 @@ def main(args):
                 feat = backbone(pixel_values_vit)
             else:
                 feat = backbone(pixel_values)
-            if args.use_mask:
-                masks = batch['mask']
-                num_slots = int(masks.max().item()) + 1
-                mask_resized = F.interpolate(masks, size=(64, 64), mode='nearest', align_corners=None)
-                feat = object_encoder_cnn.spatial_pos(feat)
-                mask_resized = [mask_resized == i for i in range(num_slots)]
-                masked_emb = [feat * mask for mask in mask_resized]
-                masked_emb = torch.stack(masked_emb, dim=0).flatten(end_dim=1)
-
-                objects_emb = object_encoder_cnn(masked_emb).reshape(-1, num_slots, args.d_model) # TODO Why no update ? 
-                slots = object_encoder_cnn.mlp(object_encoder_cnn.layer_norm(objects_emb))
-                # slots = object_encoder_cnn.mlp(object_encoder_cnn.layer_norm(objects_emb) + objects_emb ) # TODO use this if maskloss is not working
-
-                # replace slots with gaussian noise
-                need_to_replace = torch.stack([mask.sum(dim=(2, 3)) == 0 for mask in mask_resized]).permute(1,0,2).to(torch.int)
-                slots = slots * (1 - need_to_replace) + slot_attn.empty_slot.expand(*slots.shape).to(slots.device) *  need_to_replace
-
-                # calculate slots
-                slots, attn, attn_logits = slot_attn(feat[:, None], slots, need_logits=True)
-                slots = slots[:, 0]
-
-
-                # calculate mask loss
-                reshaped_masks = torch.stack(mask_resized).squeeze(dim=2).permute(1,2,3,0).flatten(1,2).to(torch.float32)
-                attn_logits_flatten= attn.squeeze(1).squeeze(1)
-                # attn_logits_flatten= attn_logits.squeeze(1)
-                # bce_loss = bce_loss_calculator(attn_logits_flatten, reshaped_masks)
+            if args.use_roi:
+                slots, num_slots = dino_in_slots_out(batch, feat, object_encoder_cnn)
             else:
-                num_slots = slot_attn_config['num_slots']
-                slots, attn = slot_attn(feat[:, None])  # for the time dimension
-                slots = slots[:, 0]
+                if args.use_mask:
+                    masks = batch['mask']
+                    num_slots = int(masks.max().item()) + 1
+                    mask_resized = F.interpolate(masks, size=(64, 64), mode='nearest', align_corners=None)
+                    feat = object_encoder_cnn.spatial_pos(feat)
+                    mask_resized = [mask_resized == i for i in range(num_slots)]
+                    masked_emb = [feat * mask for mask in mask_resized]
+                    masked_emb = torch.stack(masked_emb, dim=0).flatten(end_dim=1)
+
+                    objects_emb = object_encoder_cnn(masked_emb).reshape(-1, num_slots, args.d_model) # TODO Why no update ?
+                    slots = object_encoder_cnn.mlp(object_encoder_cnn.layer_norm(objects_emb))
+                    # slots = object_encoder_cnn.mlp(object_encoder_cnn.layer_norm(objects_emb) + objects_emb ) # TODO use this if maskloss is not working
+
+                    # replace slots with gaussian noise
+                    need_to_replace = torch.stack([mask.sum(dim=(2, 3)) == 0 for mask in mask_resized]).permute(1,0,2).to(torch.int)
+                    slots = slots * (1 - need_to_replace) + slot_attn.empty_slot.expand(*slots.shape).to(slots.device) *  need_to_replace
+
+                    # calculate slots
+                    slots, attn, attn_logits = slot_attn(feat[:, None], slots, need_logits=True)
+                    slots = slots[:, 0]
+
+
+                    # calculate mask loss
+                    reshaped_masks = torch.stack(mask_resized).squeeze(dim=2).permute(1,2,3,0).flatten(1,2).to(torch.float32)
+                    attn_logits_flatten= attn.squeeze(1).squeeze(1)
+                    # attn_logits_flatten= attn_logits.squeeze(1)
+                    # bce_loss = bce_loss_calculator(attn_logits_flatten, reshaped_masks)
+                else:
+                    num_slots = slot_attn_config['num_slots']
+                    slots, attn = slot_attn(feat[:, None])  # for the time dimension
+                    slots = slots[:, 0]
 
             if not train_unet:
                 slots = slots.to(dtype=weight_dtype)

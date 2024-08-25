@@ -256,6 +256,12 @@ def parse_args(input_args=None):
         required=True,
     )
     parser.add_argument(
+        '--use_roi',
+        type=str,
+        default=False,
+        required=False
+    )
+    parser.add_argument(
         "--scheduler_config",
         type=str,
         default=None,
