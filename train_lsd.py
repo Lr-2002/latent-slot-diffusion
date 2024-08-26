@@ -161,10 +161,11 @@ def log_validation(
     )
     unet = accelerator.unwrap_model(unet)
     backbone = accelerator.unwrap_model(backbone)
-    slot_attn = accelerator.unwrap_model(slot_attn)
+    if args.train_slot:
+        slot_attn = accelerator.unwrap_model(slot_attn)
     object_encoder_cnn = accelerator.unwrap_model(object_encoder_cnn)
     colorizer = ColorMask(
-        num_slots=slot_attn.config.num_slots,
+        num_slots=num_slots,
         log_img_size=256,
         norm_mean=0,
         norm_std=1,
@@ -363,6 +364,7 @@ def main(args):
                 repo_id=args.hub_model_id or Path(args.output_dir).name, exist_ok=True, token=args.hub_token
             ).repo_id
 
+
     # Load scheduler and models
     if args.unet_config == "pretrain_sd":
         noise_scheduler = DDPMScheduler.from_pretrained(
@@ -401,8 +403,10 @@ def main(args):
         raise ValueError(
             f"Unknown unet config {args.unet_config}")
 
-    slot_attn_config = MultiHeadSTEVESA.load_config(args.slot_attn_config)
-    slot_attn = MultiHeadSTEVESA.from_config(slot_attn_config)
+    if args.train_slot:
+        train_slot = args.train_slot
+        slot_attn_config = MultiHeadSTEVESA.load_config(args.slot_attn_config)
+        slot_attn = MultiHeadSTEVESA.from_config(slot_attn_config)
 
     object_encoder_cnn_config = EncoderCNN.load_config(args.encoder_cnn_config)
     object_encoder_cnn = EncoderCNN.from_config(object_encoder_cnn_config)
@@ -529,10 +533,11 @@ def main(args):
         raise ValueError(
             f"Object_encoder_cnn loaded as datatype {accelerator.unwrap_model(object_encoder_cnn).dtype}. {low_precision_error_string}"
         )
-    if accelerator.unwrap_model(slot_attn).dtype != torch.float32:
-        raise ValueError(
-            f"Slot Attn loaded as datatype {accelerator.unwrap_model(slot_attn).dtype}. {low_precision_error_string}"
-        )
+    if args.train_slot:
+        if accelerator.unwrap_model(slot_attn).dtype != torch.float32:
+            raise ValueError(
+                f"Slot Attn loaded as datatype {accelerator.unwrap_model(slot_attn).dtype}. {low_precision_error_string}"
+            )
 
     # Enable TF32 for faster training on Ampere GPUs,
     # cf https://pytorch.org/docs/stable/notes/cuda.html#tensorfloat-32-tf32-on-ampere-devices
@@ -560,11 +565,12 @@ def main(args):
 
 
 
-    params_to_optimize = list(slot_attn.parameters()) + list(object_encoder_cnn.parameters()) + \
+    params_to_optimize = (list(slot_attn.parameters() if args.train_slot else [])
+                          + list(object_encoder_cnn.parameters()) + \
         (list(backbone.parameters()) if train_backbone else []) + \
-        (list(unet.parameters()) if train_unet else [])
+        (list(unet.parameters()) if train_unet else []))
     params_group = [
-        {'params': list(slot_attn.parameters())  + list(object_encoder_cnn.parameters()) + \
+        {'params': list(slot_attn.parameters() if args.train_slot else [] )  + list(object_encoder_cnn.parameters()) + \
          (list(backbone.parameters()) if train_backbone else []),
          'lr': args.learning_rate * args.encoder_lr_scale}
     ]
@@ -623,10 +629,12 @@ def main(args):
         overrode_max_train_steps = True
 
     # Prepare everything with our `accelerator`.
-    slot_attn, optimizer, train_dataloader, lr_scheduler, object_encoder_cnn = accelerator.prepare(
-        slot_attn, optimizer, train_dataloader, lr_scheduler, object_encoder_cnn
+    optimizer, train_dataloader, lr_scheduler, object_encoder_cnn = accelerator.prepare(
+        optimizer, train_dataloader, lr_scheduler, object_encoder_cnn
     )
 
+    if args.train_slot:
+        slot_attn = accelerator.prepare(slot_attn)
     if train_backbone:
         backbone = accelerator.prepare(backbone)
     if train_unet:
@@ -737,7 +745,8 @@ def main(args):
             unet.train()
         if train_backbone:
             backbone.train()
-        slot_attn.train()
+        if args.train_slot:
+            slot_attn.train()
         bce_loss = None
         object_encoder_cnn.train()
         for step, batch in enumerate(train_dataloader):

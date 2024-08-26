@@ -267,6 +267,11 @@ def parse_args(input_args=None):
         default=False,
     )
     parser.add_argument(
+        '--train_slot',
+        type=bool,
+        default=False
+    )
+    parser.add_argument(
         "--scheduler_config",
         type=str,
         default=None,
