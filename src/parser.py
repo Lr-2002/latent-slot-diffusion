@@ -262,6 +262,11 @@ def parse_args(input_args=None):
         required=False
     )
     parser.add_argument(
+        "--train_dino",
+        type=bool,
+        default=False,
+    )
+    parser.add_argument(
         "--scheduler_config",
         type=str,
         default=None,

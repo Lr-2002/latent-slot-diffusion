@@ -98,7 +98,7 @@ def dino_in_slots_out(batch, feat, object_encoder_cnn):
 
         # Apply RoIAlign
         aligned_features = roi_align(
-            input=feat,
+            input=feat.to(all_rois.dtype),
             boxes=all_rois,
             output_size=output_size,
             spatial_scale=1.0,  # Assuming feature map and mask are at the same scale
@@ -380,6 +380,8 @@ def main(args):
         backbone = UNetEncoder.from_config(backbone_config)
     elif args.backbone_config == "pretrain_dino":
         train_backbone = False
+        if args.train_dino :
+            train_backbone=True
         dinov2 = torch.hub.load("facebookresearch/dinov2", "dinov2_vitb14")
         class DINOBackbone(torch.nn.Module):
             def __init__(self, dinov2):
@@ -394,6 +396,7 @@ def main(args):
                     h=int(np.sqrt(enc_out["x_norm_patchtokens"].shape[-2]))
                 )
         backbone = DINOBackbone(dinov2)
+        backbone = backbone.to(torch.float32)
     else:
         raise ValueError(
             f"Unknown unet config {args.unet_config}")
@@ -514,10 +517,13 @@ def main(args):
             f"Unet loaded as datatype {accelerator.unwrap_model(unet).dtype}. {low_precision_error_string}"
         )
 
-    if train_backbone and accelerator.unwrap_model(backbone).dtype != torch.float32:
-        raise ValueError(
-            f"Backbone loaded as datatype {accelerator.unwrap_model(backbone).dtype}. {low_precision_error_string}"
-        )
+    if train_backbone :
+        model_unwrapped = accelerator.unwrap_model(backbone)
+        all_params = all(p.dtype == torch.float32 for p in model_unwrapped.parameters())
+        if not all_params:
+            raise ValueError(
+                f"Backbone loaded as datatype {accelerator.unwrap_model(backbone).dtype}. {low_precision_error_string}"
+            )
 
     if accelerator.unwrap_model(object_encoder_cnn).dtype != torch.float32:
         raise ValueError(
