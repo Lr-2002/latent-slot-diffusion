@@ -278,7 +278,7 @@ def log_validation(
             ).images
         if args.use_roi:
             grid_image = colorizer.get_heatmap(img=(pixel_values * 0.5 + 0.5),
-                                               attn=torch.zeros((16,5,64,64)),
+                                               attn=torch.zeros((pixel_values.shape[0],5,64,64)),
                                                recon=[pixel_values_recon * 0.5 + 0.5,
                                                       images_gen])  # pixel is vae decode; images_gen is slot recon
 
@@ -932,7 +932,7 @@ def main(args):
                         images = log_validation(
                             val_dataset=val_dataset,
                             backbone=backbone,
-                            slot_attn=slot_attn,
+                            slot_attn=slot_attn if args.train_slot else None,
                             unet=unet,
                             vae=vae,
                             scheduler=noise_scheduler,
