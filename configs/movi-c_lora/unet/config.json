@@ -8,7 +8,7 @@
   "attention_head_dim": 24,
   "attention_type": "default",
   "block_out_channels": [
-    192,
+    1024,
     384,
     768,
     768
@@ -18,7 +18,7 @@
   "class_embeddings_concat": false,
   "conv_in_kernel": 3,
   "conv_out_kernel": 3,
-  "cross_attention_dim": 192,
+  "cross_attention_dim": 1024,
   "cross_attention_norm": null,
   "down_block_types": [
     "CrossAttnDownBlock2D",
