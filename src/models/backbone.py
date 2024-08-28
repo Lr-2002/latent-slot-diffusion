@@ -4,7 +4,7 @@ if __name__ == "__main__":
     sys.path.append(os.path.join(os.path.dirname(__file__), '../'))
 import torch
 from torch import nn
-from diffusers.models.unet_2d import UNet2DModel, UNet2DOutput
+from diffusers.models.unets.unet_2d import UNet2DModel, UNet2DOutput
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 
