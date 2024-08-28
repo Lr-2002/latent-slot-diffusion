@@ -420,6 +420,17 @@ def main(args):
         unet = UNet2DConditionModel.from_pretrained(
             args.pretrained_model_name, subfolder="unet", revision=args.revision
         )
+        if args.tune_unet:
+            from peft import get_peft_model, LoraConfig
+            unet_lora_config = LoraConfig(
+                r=args.lora_rank,
+                lora_alpha= args.lora_alpha,
+                init_lora_weights="gaussian",
+                target_modules=["to_k", "to_q", "to_v", "to_out.0"],
+            )
+            unet = get_peft_model(unet, unet_lora_config)
+            lora_layers = filter(lambda p: p.requires_grad, unet.parameters())
+            lora_parameters = list(lora_layers)
     else:
         raise ValueError(
             f"Unknown unet config {args.unet_config}")
@@ -563,17 +574,22 @@ def main(args):
     else:
         optimizer_class = torch.optim.AdamW
 
-
-
+    if args.tune_unet:
+        lora_parameters = lora_parameters
+    else:
+        lora_parameters = []
     params_to_optimize = (list(slot_attn.parameters() if args.train_slot else [])
                           + list(object_encoder_cnn.parameters()) + \
         (list(backbone.parameters()) if train_backbone else []) + \
-        (list(unet.parameters()) if train_unet else []))
+        (list(unet.parameters()) if train_unet else []) + \
+                          (lora_parameters)
+        )
     params_group = [
         {'params': list(slot_attn.parameters() if args.train_slot else [] )  + list(object_encoder_cnn.parameters()) + \
-         (list(backbone.parameters()) if train_backbone else []),
+         (list(backbone.parameters()) if train_backbone else [])+ (lora_parameters),
          'lr': args.learning_rate * args.encoder_lr_scale}
     ]
+
     if train_unet:
         params_group.append(
             {'params': unet.parameters(), "lr": args.learning_rate}

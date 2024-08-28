@@ -8,8 +8,8 @@ from torch import nn
 from einops.layers.torch import Rearrange
 from einops import rearrange, repeat, reduce
 from typing import Any, Dict, List, Optional, Tuple, Union
-from diffusers.models.unet_2d_condition import UNet2DConditionModel
-from diffusers.models.unet_2d_blocks import CrossAttnDownBlock2D, CrossAttnUpBlock2D, \
+from diffusers.models.unets.unet_2d_condition import UNet2DConditionModel
+from diffusers.models.unets.unet_2d_blocks import CrossAttnDownBlock2D, CrossAttnUpBlock2D, \
     UNetMidBlock2DCrossAttn, UNetMidBlock2DSimpleCrossAttn
 from src.models.utils import CartesianPositionalEmbedding, SinCosPositionalEmbedding2D, \
     LearnedPositionalEmbedding1D

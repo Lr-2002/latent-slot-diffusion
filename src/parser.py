@@ -328,6 +328,23 @@ def parse_args(input_args=None):
     )
 
     parser.add_argument(
+        "--tune_unet",
+        type=bool,
+        default=False
+        )
+    parser.add_argument(
+        "--lora_rank",
+        type=int,
+        default=16,
+    )
+
+    parser.add_argument(
+        "--lora_alpha",
+        type=float,
+        default=4.0
+    )
+
+    parser.add_argument(
         '--hidden_size',
         type=int,
         default=192
