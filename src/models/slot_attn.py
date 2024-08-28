@@ -87,7 +87,7 @@ class MultiHeadSTEVESA(ModelMixin, ConfigMixin):
         self.out_layer_norm = nn.LayerNorm(slot_size)
         self.out_linear = nn.Linear(slot_size, out_size)
         
-    def forward(self, inputs, inputs_slots, need_logits=False):
+    def forward(self, inputs, inputs_slots=None, need_logits=False):
         if need_logits :
             slots_collect, attns_collect, attns_logits= self.forward_slots(inputs, inputs_slots, need_logits)
         else:
@@ -113,8 +113,8 @@ class MultiHeadSTEVESA(ModelMixin, ConfigMixin):
         inputs = self.in_mlp(self.in_layer_norm(inputs))
 
         # num_inputs = h * w
-        if self.input_slots == True:
-            assert inputs_slots is not None
+        if inputs_slots is not None:
+            # assert inputs_slots is not NoneNone
             slots = inputs_slots
             self.num_slots = slots.size(1)
         else:
