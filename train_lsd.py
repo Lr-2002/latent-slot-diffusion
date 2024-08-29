@@ -421,6 +421,7 @@ def main(args):
             args.pretrained_model_name, subfolder="unet", revision=args.revision
         )
         if args.tune_unet:
+            train_unet =True
             from peft import get_peft_model, LoraConfig
             unet_lora_config = LoraConfig(
                 r=args.lora_rank,
@@ -494,8 +495,9 @@ def main(args):
         except:
             pass
     if not train_unet:
-        unet.requires_grad_(False)
-        
+        if not args.tune_unet:
+            unet.requires_grad_(False)
+
     if args.enable_xformers_memory_efficient_attention:
         if is_xformers_available():
             import xformers
@@ -581,9 +583,10 @@ def main(args):
     params_to_optimize = (list(slot_attn.parameters() if args.train_slot else [])
                           + list(object_encoder_cnn.parameters()) + \
         (list(backbone.parameters()) if train_backbone else []) + \
-        (list(unet.parameters()) if train_unet else []) + \
+        (list(unet.parameters()) if (train_unet and not args.tune_unet) else []) + \
                           (lora_parameters)
         )
+    params_to_optimize = [x.to(torch.float32) for x in params_to_optimize]
     params_group = [
         {'params': list(slot_attn.parameters() if args.train_slot else [] )  + list(object_encoder_cnn.parameters()) + \
          (list(backbone.parameters()) if train_backbone else [])+ (lora_parameters),
@@ -591,9 +594,10 @@ def main(args):
     ]
 
     if train_unet:
-        params_group.append(
-            {'params': unet.parameters(), "lr": args.learning_rate}
-        )
+        if not args.tune_unet:
+            params_group.append(
+                {'params': unet.parameters(), "lr": args.learning_rate}
+            )
 
     optimizer = optimizer_class(
         params_group,
@@ -605,10 +609,14 @@ def main(args):
     
     # implement your lr_sceduler here, here I use constant functions as 
     # the template for your reference
-    lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
-        optimizer, lr_lambda=[lambda _: 1, lambda _: 1] if train_unet else [lambda _: 1]
-        )
+    # lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
+    #     optimizer, lr_lambda=[lambda _: 1, lambda _: 1] if train_unet else [lambda _: 1]
+    #     )
     #
+
+    lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
+        optimizer, lr_lambda=[lambda _: 1] if train_unet else [lambda _: 1]
+    )
     # train_dataset = GlobDataset_MASK(
     #     root=args.dataset_root,
     #     img_size=args.resolution,
@@ -672,7 +680,10 @@ def main(args):
         except:
             pass
     if not train_unet:
-        unet.to(accelerator.device, dtype=weight_dtype)
+        if args.tune_unet:
+            unet.to(accelerator.device, dtype=torch.float32)
+        else:
+            unet.to(accelerator.device, dtype=weight_dtype)
 
     # We need to recalculate our total training steps as the size of the training dataloader may have changed.
     num_update_steps_per_epoch = math.ceil(
