@@ -6,6 +6,7 @@ config_dir="configs/movi-c_lora_dino"
     --dataloader_num_workers 4 \
     --learning_rate 3e-4 \
     --lora_lr 3e-5 \
+    --dino_lr 3e-5 \
     --mixed_precision fp16 \
     --num_validation_images 16 \
     --val_batch_size 16 \
