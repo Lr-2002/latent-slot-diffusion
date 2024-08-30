@@ -96,6 +96,17 @@ def parse_args(input_args=None):
         help="Initial learning rate (after the potential warmup period) to use.",
     )
     parser.add_argument(
+        "--lora_lr",
+        type=float,
+        default=3e-5,
+    )
+    parser.add_argument(
+        '--dino_lr',
+        type=float,
+        default=3e-5
+    )
+
+    parser.add_argument(
         "--scale_lr",
         action="store_true",
         default=False,

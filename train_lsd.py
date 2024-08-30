@@ -587,18 +587,26 @@ def main(args):
                           (lora_parameters)
         )
     params_to_optimize = [x.to(torch.float32) for x in params_to_optimize]
+    # params_group = [
+    #     {'params': list(slot_attn.parameters() if args.train_slot else [] )  + list(object_encoder_cnn.parameters()) + \
+    #      (list(backbone.parameters()) if train_backbone else [])+ (lora_parameters),
+    #      'lr': args.learning_rate * args.encoder_lr_scale}
+    # ]
+    #
     params_group = [
         {'params': list(slot_attn.parameters() if args.train_slot else [] )  + list(object_encoder_cnn.parameters()) + \
-         (list(backbone.parameters()) if train_backbone else [])+ (lora_parameters),
-         'lr': args.learning_rate * args.encoder_lr_scale}
-    ]
+         (list(backbone.parameters()) if train_backbone else []),
+         'lr': args.learning_rate * args.encoder_lr_scale},
 
+    ]
     if train_unet:
         if not args.tune_unet:
             params_group.append(
                 {'params': unet.parameters(), "lr": args.learning_rate}
             )
-
+        else:
+            params_group.append({
+               'params': (lora_parameters), "lr": args.lora_lr})
     optimizer = optimizer_class(
         params_group,
         lr=args.learning_rate,
@@ -613,9 +621,8 @@ def main(args):
     #     optimizer, lr_lambda=[lambda _: 1, lambda _: 1] if train_unet else [lambda _: 1]
     #     )
     #
-
     lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
-        optimizer, lr_lambda=[lambda _: 1] if train_unet else [lambda _: 1]
+        optimizer, lr_lambda=[lambda _: 1, lambda _:1] if train_unet else [lambda _: 1]
     )
     # train_dataset = GlobDataset_MASK(
     #     root=args.dataset_root,
