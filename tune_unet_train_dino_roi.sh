@@ -1,4 +1,4 @@
-config_dir="configs/movi-c_lora_dino"
+config_dir="configs/movi-c/tune_unet_train_dino_roi"
 
 # Your command
 /home/lr-2002/anaconda3/envs/lsd/bin/python /home/lr-2002/code/latent-slot-diffusion/train_lsd.py \
@@ -17,7 +17,7 @@ config_dir="configs/movi-c_lora_dino"
     --seed 42 \
     --encoder_lr_scale 1.0 \
     --train_split_portion 0.9 \
-    --output_dir ./logs/movi-c-lora/train_lora_and_dino \
+    --output_dir ./logs/movi-c/tune_unet_train_dino_roi \
     --backbone_config pretrain_dino \
     --slot_attn_config ${config_dir}/slot_attn/config.json \
     --unet_config pretrain_sd \
@@ -30,8 +30,8 @@ config_dir="configs/movi-c_lora_dino"
     --tracker_project_name latent_slot_diffusion \
     --validation_steps 1000 \
     --encoder_cnn_config ${config_dir}/encoder_cnn/encoder_cnn_config.json \
-    --train_slot true \
     --tune_unet true \
     --lora_rank 8 \
     --lora_alpha 16.0 \
-    --train_dino true
+    --train_dino true \
+    --use_roi true
