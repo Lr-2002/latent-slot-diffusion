@@ -375,7 +375,7 @@ def main(args):
 
     vae = AutoencoderKL.from_pretrained(
         args.pretrained_model_name, subfolder="vae")
-    
+
     if os.path.exists(args.backbone_config):
         train_backbone = True
         backbone_config = UNetEncoder.load_config(args.backbone_config)
@@ -393,7 +393,7 @@ def main(args):
             def forward(self, x):
                 enc_out = self.dinov2.forward_features(x)
                 return rearrange(
-                    enc_out["x_norm_patchtokens"], 
+                    enc_out["x_norm_patchtokens"],
                     "b (h w ) c -> b c h w",
                     h=int(np.sqrt(enc_out["x_norm_patchtokens"].shape[-2]))
                 )
@@ -623,8 +623,8 @@ def main(args):
         weight_decay=args.adam_weight_decay,
         eps=args.adam_epsilon,
     )
-    
-    # implement your lr_sceduler here, here I use constant functions as 
+
+    # implement your lr_sceduler here, here I use constant functions as
     # the template for your reference
     # lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
     #     optimizer, lr_lambda=[lambda _: 1, lambda _: 1] if train_unet else [lambda _: 1]
@@ -780,10 +780,10 @@ def main(args):
     loss_calculator = nn.Sigmoid()
     for epoch in range(first_epoch, args.num_train_epochs):
         """
-        1. where is the noise added 
-        2. 
-        
-        
+        1. where is the noise added
+        2.
+
+
         """
         if train_unet:
             unet.train()
@@ -858,7 +858,7 @@ def main(args):
                     # attn_logits_flatten= attn_logits.squeeze(1)
                     # bce_loss = bce_loss_calculator(attn_logits_flatten, reshaped_masks)
                 else:
-                    num_slots = slot_attn_config['num_slots']
+                    num_slots = slot_attn.num_slots
                     slots, attn = slot_attn(feat[:, None])  # for the time dimension
                     slots = slots[:, 0]
 
