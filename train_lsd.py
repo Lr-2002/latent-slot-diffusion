@@ -1,4 +1,6 @@
 import argparse
+import peft
+from peft import PeftModel
 import copy
 import gc
 import hashlib
@@ -10,6 +12,8 @@ import os
 import shutil
 import warnings
 from pathlib import Path
+
+import peft
 from torchvision.ops import roi_align
 import numpy as np
 import torch
@@ -443,7 +447,7 @@ def main(args):
             for model in models:
 
                 # continue if not one of [UNetEncoder, MultiHeadSTEVESA, UNet2DConditionModelWithPos]
-                if not isinstance(model, (UNetEncoder, MultiHeadSTEVESA, UNet2DConditionModelWithPos, EncoderCNN)):
+                if not isinstance(model, (UNetEncoder, MultiHeadSTEVESA, UNet2DConditionModelWithPos, EncoderCNN, PeftModel)):
                     continue
 
                 sub_dir = model._get_name().lower()
@@ -452,15 +456,18 @@ def main(args):
 
                 # make sure to pop weight so that corresponding model is not saved again
                 weights.pop()
-
+    peftmodel = None
     def load_model_hook(models, input_dir):
         while len(models) > 0:
             # pop models so that they are not loaded again
-            model = models.pop()
 
+            model = models.pop()
+            if len(models) >1 and isinstance(model, peft.PeftModel):
+                peftmodel = model
+                continue
             sub_dir = model._get_name().lower()
 
-            if isinstance(model, UNetEncoder):
+            if isinstance(model, UNetEncoder) or isinstance(model, peft.PeftModel):
                 # load diffusers style into model
                 load_model = UNetEncoder.from_pretrained(
                     input_dir, subfolder=sub_dir)
