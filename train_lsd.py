@@ -1,4 +1,6 @@
 import argparse
+from warnings import simplefilter
+simplefilter(action='ignore', category=FutureWarning)
 import peft
 from peft import PeftModel
 import copy
@@ -321,6 +323,15 @@ def log_validation(
 
     return images
 
+def from_feat_to_cross_attention_slots(feat, masks):
+    """
+    feat and some layers feature in
+    average init slots
+    slots update with cross attention
+    return slots
+    """
+
+    pass
 def main(args):
     logging_dir = Path(args.output_dir, args.logging_dir)
 

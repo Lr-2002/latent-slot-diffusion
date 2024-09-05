@@ -49,10 +49,11 @@ class UNetEncoder(UNet2DModel):
     def forward(
         self,
         sample: torch.FloatTensor,
+        need_layers = False
     ) -> Union[UNet2DOutput, Tuple]:
 
-        sample = self.downscale_cnn(sample)
-        return self.original_forward(sample, timestep=0, class_labels=None).sample
+        sample = self.downscale_cnn(sample) # 16, 128, 64, 64
+        return self.original_forward(sample, timestep=0, class_labels=None).sample # 16, 192, 64,64
 
 if __name__ == "__main__":
     block_out_channels = (128, 128, 256, 512) # each of then should be divisible by the least common multiple of (80, 32, 15)
