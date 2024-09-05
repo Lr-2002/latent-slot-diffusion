@@ -51,8 +51,7 @@ from src.data.dataset import GlobDataset_MASK
 from torch import nn
 from src.parser import parse_args
 
-from src.models.utils import ColorMask
-
+from src.models.utils import ColorMask, PositionNet
 if is_wandb_available():
     import wandb
 
@@ -244,6 +243,8 @@ def log_validation(
                 feat = backbone(pixel_values)
             if args.use_roi:
                 slots, num_slots = dino_in_slots_out(batch, feat, object_encoder_cnn)
+            elif args.use_slot_query:
+                slots, num_slots = from_feat_to_cross_attention_slots(feat, batch['mask'], object_encoder_cnn)
             else:
                 if args.use_mask:
                     logger.info('use mask to validation ')
@@ -323,7 +324,39 @@ def log_validation(
 
     return images
 
-def from_feat_to_cross_attention_slots(feat, masks):
+
+
+
+def get_bounding_boxes(masks):
+    B, num_slots, H, W = masks.shape
+    bounding_boxes = torch.zeros(B, num_slots, 4)  # (x, y, w, h) for each slot
+
+    for b in range(B):
+        for slot in range(num_slots):
+            mask = masks[b, slot]
+
+            # Find non-zero (True) elements in the mask
+            non_zero_indices = torch.nonzero(mask, as_tuple=True)
+
+            if len(non_zero_indices[0]) > 0:
+                # Get min and max coordinates for the mask
+                y_min = torch.min(non_zero_indices[0])
+                y_max = torch.max(non_zero_indices[0])
+                x_min = torch.min(non_zero_indices[1])
+                x_max = torch.max(non_zero_indices[1])
+
+                # Calculate (x, y, w, h)
+                x = x_min.item()
+                y = y_min.item()
+                w = (x_max - x_min + 1).item()  # width
+                h = (y_max - y_min + 1).item()  # height
+
+                bounding_boxes[b, slot] = torch.tensor([x, y, w, h])
+
+    return bounding_boxes
+
+
+def from_feat_to_cross_attention_slots(feat, masks, encoder_cnn:EncoderCNN):
     """
     feat and some layers feature in
     average init slots
@@ -331,7 +364,25 @@ def from_feat_to_cross_attention_slots(feat, masks):
     return slots
     """
 
-    pass
+    masks = masks.to(feat.device)
+    num_slots = int(masks.max().item()) + 1
+    feat = encoder_cnn.spatial_pos(feat)
+    mask_resized = F.interpolate(masks, size=(64, 64), mode='nearest', align_corners=None)
+    # mask_resized = mask_resized.permute(0,1,3,4,2)
+    mask_resized = [mask_resized == i for i in range(num_slots)]
+    bbx = get_bounding_boxes(torch.stack(mask_resized, dim=0).squeeze(2).permute(1,0,2,3))
+    masked_emb = [feat * mask for mask in mask_resized]
+    masked_emb = torch.stack(masked_emb, dim=0).permute(1,0, 2,3,4)
+    slots = torch.mean(masked_emb, (3,4))
+    tf_input = masked_emb.flatten(3,4) #need pos
+    plc_slots = []
+    for i in range(slots.shape[1]):
+        plc_slots.append(encoder_cnn.cross_attention(slots[:, i].unsqueeze(1), tf_input[:,i].permute(0,2,1)))
+    slots = torch.stack(plc_slots, dim=1).squeeze(2)
+    bbx = bbx.to(slots.device)
+    ppn = PositionNet(slots.shape[-1], slots.shape[-1]).to(slots.device)
+    slots = ppn(bbx, slots)
+    return slots, num_slots
 def main(args):
     logging_dir = Path(args.output_dir, args.logging_dir)
 
@@ -847,6 +898,8 @@ def main(args):
                 feat = backbone(pixel_values)
             if args.use_roi:
                 slots, num_slots = dino_in_slots_out(batch, feat, object_encoder_cnn)
+            elif args.use_slot_query:
+                slots, num_slots = from_feat_to_cross_attention_slots(feat, batch['mask'], object_encoder_cnn)
             else:
                 if args.use_mask:
                     masks = batch['mask']

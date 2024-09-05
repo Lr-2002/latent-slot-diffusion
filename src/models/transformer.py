@@ -7,7 +7,7 @@ import sys
 sys.path.append(base_path)
 
 
-from tf_utils import *
+from src.models.tf_utils import *
 
 
 class MultiHeadAttention(nn.Module):

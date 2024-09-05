@@ -1,4 +1,5 @@
 from torch import nn
+from src.models.transformer import TransformerDecoder
 import torch
 from diffusers.models import ModelMixin
 from diffusers.configuration_utils import ConfigMixin, register_to_config
@@ -84,7 +85,7 @@ class CartesianPositionalEmbedding(nn.Module):
 
 class EncoderCNN( ModelMixin, ConfigMixin):
     @register_to_config
-    def __init__(self, cnn_hidden_size, d_model, bbx_shape=4, pos_emb_shape = 512, slots_input_shape=768, slots_shape = 1024):
+    def __init__(self, cnn_hidden_size, d_model, bbx_shape=4, pos_emb_shape = 512, slots_input_shape=768, slots_shape = 1024, num_blocks=4, num_heads=4,  max_len=512):
         super().__init__()
         self.object_encoder_cnn = nn.Sequential(
             BatchNormConvBlock(cnn_hidden_size, cnn_hidden_size, 7, 3, 0),
@@ -108,6 +109,8 @@ class EncoderCNN( ModelMixin, ConfigMixin):
             linear(slots_input_shape + pos_emb_shape, slots_shape, weight_init='kaiming'),
             nn.ReLU(),
             linear(slots_shape, slots_shape))
+
+        self.cross_attention = TransformerDecoder(num_blocks, max_len, d_model, num_heads)
 
     def forward(self, x):
         return self.object_encoder_cnn(x)

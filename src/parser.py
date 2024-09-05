@@ -331,7 +331,11 @@ def parse_args(input_args=None):
         type=bool,
         default=False,
     )
-
+    parser.add_argument(
+        '--use_slot_query',
+        type=bool,
+        default=False
+    )
     parser.add_argument(
         "--d_model",
         type=int,
