@@ -283,7 +283,7 @@ def log_validation(
                 guidance_scale=1, # todo 1.5
                 output_type="pt",
             ).images
-        if args.use_roi:
+        if args.use_roi or args.use_slot_query:
             grid_image = colorizer.get_heatmap(img=(pixel_values * 0.5 + 0.5),
                                                attn=torch.zeros((pixel_values.shape[0],5,64,64)),
                                                recon=[pixel_values_recon * 0.5 + 0.5,
