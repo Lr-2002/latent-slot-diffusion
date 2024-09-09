@@ -22,3 +22,14 @@ eggs/
 .DS_Store
 
 __pycache__/
+logs
+val2017
+wrong_loss.pt
+annotations_trainval2017.zip
+image.zip
+mask.zip
+model_pred.pt
+movi_c
+movi_c.zip
+target.pt
+/

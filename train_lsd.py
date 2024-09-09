@@ -362,6 +362,14 @@ def from_feat_to_cross_attention_slots(feat, masks, encoder_cnn:EncoderCNN):
     average init slots
     slots update with cross attention
     return slots
+
+    9 *16
+    ->
+    144
+
+
+    16 *9 -> 144
+    todo test
     """
 
     masks = masks.to(feat.device)
@@ -371,7 +379,8 @@ def from_feat_to_cross_attention_slots(feat, masks, encoder_cnn:EncoderCNN):
     # mask_resized = mask_resized.permute(0,1,3,4,2)
     mask_resized = [mask_resized == i for i in range(num_slots)]
     bbx = get_bounding_boxes(torch.stack(mask_resized, dim=0).squeeze(2).permute(1,0,2,3))
-    masked_emb = [feat * mask for mask in mask_resized]
+    masked_emb = [feat * mask for mask in mask_resized] # 64 *64
+    # todo delete corresponding zero-emb
     masked_emb = torch.stack(masked_emb, dim=0).permute(1,0, 2,3,4)
     slots = torch.mean(masked_emb, (3,4))
     tf_input = masked_emb.flatten(3,4) #need pos

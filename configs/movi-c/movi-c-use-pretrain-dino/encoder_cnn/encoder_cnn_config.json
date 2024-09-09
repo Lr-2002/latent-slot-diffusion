@@ -1,0 +1,6 @@
+{
+  "_class_name": "EncoderCNN",
+  "_diffusers_version": "0.21.4",
+  "cnn_hidden_size":  192,
+  "d_model": 192
+}

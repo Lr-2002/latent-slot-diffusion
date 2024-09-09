@@ -4,7 +4,7 @@ CUDA_VISIBLE_DEVICES=0  python train_lsd.py  \
 --checkpointing_steps 1 --checkpoints_total_limit 2 --gradient_accumulation_steps 1 \
 --seed 42 --encoder_lr_scale 1.0 --train_split_portion 0.9 \
 --output_dir ./logs/movi-e/use_mask_cnn_with_postion_embedding_fixed_validation/ \
---backbone_config configs/movi-e/backbone/config.json \
+--backbone_config configs/movi-e/backbone/confIG.json \
 --slot_attn_config configs/movi-e/slot_attn/config.json \
 --encoder_cnn_config configs/movi-e/encoder_cnn/encoder_cnn_config.json \
 --unet_config configs/movi-e/unet/config.json \
