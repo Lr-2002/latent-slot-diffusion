@@ -160,9 +160,10 @@ def log_validation(
     global_step,
     object_encoder_cnn,
     num_slots,
+    log_type = 'validation',
 ):
     logger.info(
-        f"Running validation... \n."
+        f"Running {log_type}... \n."
     )
     unet = accelerator.unwrap_model(unet)
     backbone = accelerator.unwrap_model(backbone)
@@ -179,7 +180,7 @@ def log_validation(
     val_dataloader = torch.utils.data.DataLoader(
         val_dataset,
         batch_size=args.val_batch_size,
-        shuffle=False,
+        shuffle=True,
         num_workers=args.dataloader_num_workers,
     )
 
@@ -219,7 +220,7 @@ def log_validation(
         device=accelerator.device).manual_seed(args.seed)
 
     num_digits = len(str(args.max_train_steps))
-    folder_name = f"image_logging_{global_step:0{num_digits}}"
+    folder_name = f"image_logging_{global_step:0{num_digits}}_{log_type}"
     image_log_dir = os.path.join(accelerator.logging_dir, folder_name, )
     os.makedirs(image_log_dir, exist_ok=True)
 
@@ -247,7 +248,7 @@ def log_validation(
                 slots, num_slots = from_feat_to_cross_attention_slots(feat, batch['mask'], object_encoder_cnn)
             else:
                 if args.use_mask:
-                    logger.info('use mask to validation ')
+                    logger.info(f'use mask to {log_type} ')
 
                     masks = batch['mask'].to(feat.device)
                     num_slots = int(masks.max().item()) + 1
@@ -299,7 +300,7 @@ def log_validation(
         ndarr = grid_image.mul(255).add_(0.5).clamp_(0, 255).permute(1, 2, 0).to('cpu', torch.uint8).numpy()
         im = Image.fromarray(ndarr)
         images.append(im)
-        img_path = os.path.join(image_log_dir, f"image_{batch_idx:02}.jpg")
+        img_path = os.path.join(image_log_dir, f"image_{batch_idx:02}_{log_type}.jpg")
         im.save(img_path, optimize=True, quality=95)
         image_count += pixel_values.shape[0]
         if image_count >= args.num_validation_images:
@@ -309,11 +310,11 @@ def log_validation(
         if tracker.name == "tensorboard":
             np_images = np.stack([np.asarray(img) for img in images])
             tracker.writer.add_images(
-                "validation", np_images, global_step, dataformats="NHWC")
+                log_type, np_images, global_step, dataformats="NHWC")
         if tracker.name == "wandb":
             tracker.log(
                 {
-                    "validation": [
+                    log_type: [
                         wandb.Image(image, caption=f"{i}") for i, image in enumerate(images)
                     ]
                 }
@@ -1060,6 +1061,22 @@ def main(args):
                         logger.info(f"Saved state to {save_path}")
 
                     images = []
+                    if global_step % args.training_steps == 0:
+                        images = log_validation(
+                            val_dataset=train_dataset,
+                            backbone=backbone,
+                            slot_attn=slot_attn if args.train_slot else None,
+                            unet=unet,
+                            vae=vae,
+                            scheduler=noise_scheduler,
+                            args=args,
+                            accelerator=accelerator,
+                            weight_dtype=weight_dtype,
+                            global_step=global_step,
+                            object_encoder_cnn=object_encoder_cnn,
+                            num_slots=num_slots,
+                            log_type='train',
+                        )
 
                     if global_step % args.validation_steps == 0:
                         images = log_validation(

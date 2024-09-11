@@ -37,13 +37,13 @@ def parse_args(input_args=None):
             " resolution"
         ),
     )
-    
+
     parser.add_argument(
-        "--train_batch_size", type=int, default=4, 
+        "--train_batch_size", type=int, default=4,
         help="Batch size (per device) for the training dataloader."
     )
     parser.add_argument(
-        "--val_batch_size", type=int, default=4, 
+        "--val_batch_size", type=int, default=4,
         help="Batch size (per device) for the validation dataloader."
     )
     parser.add_argument("--num_train_epochs", type=int, default=1)
@@ -85,6 +85,12 @@ def parse_args(input_args=None):
         help="Number of updates steps to accumulate before performing a backward/update pass.",
     )
     parser.add_argument(
+        "--training_steps",
+        type=int,
+        default=1000,
+        help='number of steps to log training part '
+    )
+    parser.add_argument(
         "--gradient_checkpointing",
         action="store_true",
         help="Whether or not to use gradient checkpointing to save memory at the expense of slower backward pass.",
@@ -112,7 +118,7 @@ def parse_args(input_args=None):
         default=False,
         help="Scale the learning rate by the number of GPUs, gradient accumulation steps, and batch size.",
     )
-    
+
     parser.add_argument(
         "--use_8bit_adam", action="store_true", help="Whether or not to use 8-bit Adam from bitsandbytes."
     )
@@ -163,7 +169,7 @@ def parse_args(input_args=None):
             ' (default), `"wandb"` and `"comet_ml"`. Use `"all"` to report to all integrations.'
         ),
     )
-    
+
     parser.add_argument(
         "--num_validation_images",
         type=int,
@@ -190,8 +196,8 @@ def parse_args(input_args=None):
             " 1.10.and an Nvidia Ampere GPU.  Default to the value of accelerate config of the current system or the"
             " flag passed with the `accelerate.launch` command. Use this argument to override the accelerate config."
         ),
-    ) # recommended 
-    
+    ) # recommended
+
     parser.add_argument("--local_rank", type=int, default=-1, help="For distributed training: local_rank")
     parser.add_argument(
         "--enable_xformers_memory_efficient_attention", action="store_true", help="Whether or not to use xformers."
@@ -222,7 +228,7 @@ def parse_args(input_args=None):
         help="SNR weighting gamma to be used if rebalancing the loss. Recommended value is 5.0. "
         "More details here: https://arxiv.org/abs/2303.09556.",
     )
-    
+
     parser.add_argument(
         "--validation_scheduler",
         type=str,
