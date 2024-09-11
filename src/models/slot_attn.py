@@ -88,6 +88,7 @@ class MultiHeadSTEVESA(ModelMixin, ConfigMixin):
         self.out_linear = nn.Linear(slot_size, out_size)
         
     def forward(self, inputs, inputs_slots=None, need_logits=False):
+        print('inputs', inputs.shape, inputs.device)
         if need_logits :
             slots_collect, attns_collect, attns_logits= self.forward_slots(inputs, inputs_slots, need_logits)
         else:
