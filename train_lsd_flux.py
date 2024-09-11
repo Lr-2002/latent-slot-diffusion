@@ -492,6 +492,9 @@ def main(args):
         unet_config = UNet2DConditionModelWithPos.load_config(args.unet_config)
         unet = UNet2DConditionModelWithPos.from_config(unet_config)
     elif args.unet_config == "pretrain_sd":
+        if 'FLUX' in  args.pretrained_model_name :
+            from diffusers import FluxTransformer2DModel
+            transformer = FluxTransformer2DModel.from_single_file('https://huggingface.co/Kijai/flux-fp8/blob/main/flux1-dev-fp8.safetensors')
         train_unet = False
         unet = UNet2DConditionModel.from_pretrained(
             args.pretrained_model_name, subfolder="unet", revision=args.revision
@@ -534,12 +537,12 @@ def main(args):
             # pop models so that they are not loaded again
 
             model = models.pop()
-            # if len(models) >1 and isinstance(model, peft.PeftModel):
-            #     peftmodel = model
-            #     continue
+            if len(models) >1 and isinstance(model, peft.PeftModel):
+                peftmodel = model
+                continue
             sub_dir = model._get_name().lower()
 
-            if isinstance(model, UNetEncoder):
+            if isinstance(model, UNetEncoder) or isinstance(model, peft.PeftModel):
                 # load diffusers style into model
                 load_model = UNetEncoder.from_pretrained(
                     input_dir, subfolder=sub_dir)
@@ -555,14 +558,6 @@ def main(args):
             elif isinstance(model, EncoderCNN):
                 load_model = EncoderCNN.from_pretrained(
                     input_dir, subfolder=sub_dir)
-                model.register_to_config(**load_model.config)
-            elif isinstance(model, peft.PeftModel):
-                unet = UNet2DConditionModel.from_pretrained(
-                    args.pretrained_model_name, subfolder="unet", revision=args.revision
-                )
-                load_model = peft.PeftModel.from_pretrained(
-                    unet, os.path.join(input_dir, sub_dir)
-                    )
                 model.register_to_config(**load_model.config)
             # todo need to load object encoder here
             else:

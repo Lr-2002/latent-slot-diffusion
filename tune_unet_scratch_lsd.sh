@@ -33,4 +33,5 @@ config_dir="configs/movi-c/tune_unet_scratch_lsd"
     --tune_unet true \
     --lora_rank 8 \
     --lora_alpha 16.0 \
-    --train_slot true
+    --train_slot true \
+    --pretrained_model_name "stabilityai/stable-diffusion-3-medium"
