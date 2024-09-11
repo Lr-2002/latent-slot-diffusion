@@ -37,6 +37,7 @@ from diffusers import (
     StableDiffusionPipeline,
     UNet2DConditionModel,
 )
+from diffusers.models.transformers.transformer_sd3 import  SD3Transformer2DModel
 # from diffusers.training_utils import compute_snr # diffusers is still working on this, uncomment in future versions
 from diffusers.utils import check_min_version, is_wandb_available
 from diffusers.utils.import_utils import is_xformers_available
@@ -160,9 +161,10 @@ def log_validation(
     global_step,
     object_encoder_cnn,
     num_slots,
+    log_type = 'validation',
 ):
     logger.info(
-        f"Running validation... \n."
+        f"Running {log_type}... \n."
     )
     unet = accelerator.unwrap_model(unet)
     backbone = accelerator.unwrap_model(backbone)
@@ -179,7 +181,7 @@ def log_validation(
     val_dataloader = torch.utils.data.DataLoader(
         val_dataset,
         batch_size=args.val_batch_size,
-        shuffle=False,
+        shuffle=True,
         num_workers=args.dataloader_num_workers,
     )
 
@@ -219,7 +221,7 @@ def log_validation(
         device=accelerator.device).manual_seed(args.seed)
 
     num_digits = len(str(args.max_train_steps))
-    folder_name = f"image_logging_{global_step:0{num_digits}}"
+    folder_name = f"image_logging_{global_step:0{num_digits}}_{log_type}"
     image_log_dir = os.path.join(accelerator.logging_dir, folder_name, )
     os.makedirs(image_log_dir, exist_ok=True)
 
@@ -247,7 +249,7 @@ def log_validation(
                 slots, num_slots = from_feat_to_cross_attention_slots(feat, batch['mask'], object_encoder_cnn)
             else:
                 if args.use_mask:
-                    logger.info('use mask to validation ')
+                    logger.info(f'use mask to {log_type} ')
 
                     masks = batch['mask'].to(feat.device)
                     num_slots = int(masks.max().item()) + 1
@@ -299,7 +301,7 @@ def log_validation(
         ndarr = grid_image.mul(255).add_(0.5).clamp_(0, 255).permute(1, 2, 0).to('cpu', torch.uint8).numpy()
         im = Image.fromarray(ndarr)
         images.append(im)
-        img_path = os.path.join(image_log_dir, f"image_{batch_idx:02}.jpg")
+        img_path = os.path.join(image_log_dir, f"image_{batch_idx:02}_{log_type}.jpg")
         im.save(img_path, optimize=True, quality=95)
         image_count += pixel_values.shape[0]
         if image_count >= args.num_validation_images:
@@ -309,11 +311,11 @@ def log_validation(
         if tracker.name == "tensorboard":
             np_images = np.stack([np.asarray(img) for img in images])
             tracker.writer.add_images(
-                "validation", np_images, global_step, dataformats="NHWC")
+                log_type, np_images, global_step, dataformats="NHWC")
         if tracker.name == "wandb":
             tracker.log(
                 {
-                    "validation": [
+                    log_type: [
                         wandb.Image(image, caption=f"{i}") for i, image in enumerate(images)
                     ]
                 }
@@ -492,7 +494,6 @@ def main(args):
         unet_config = UNet2DConditionModelWithPos.load_config(args.unet_config)
         unet = UNet2DConditionModelWithPos.from_config(unet_config)
     elif args.unet_config == "pretrain_sd":
-
         train_unet = False
         unet = UNet2DConditionModel.from_pretrained(
             args.pretrained_model_name, subfolder="unet", revision=args.revision
@@ -535,12 +536,12 @@ def main(args):
             # pop models so that they are not loaded again
 
             model = models.pop()
-            if len(models) >1 and isinstance(model, peft.PeftModel):
-                peftmodel = model
-                continue
+            # if len(models) >1 and isinstance(model, peft.PeftModel):
+            #     peftmodel = model
+            #     continue
             sub_dir = model._get_name().lower()
 
-            if isinstance(model, UNetEncoder) or isinstance(model, peft.PeftModel):
+            if isinstance(model, UNetEncoder):
                 # load diffusers style into model
                 load_model = UNetEncoder.from_pretrained(
                     input_dir, subfolder=sub_dir)
@@ -556,6 +557,14 @@ def main(args):
             elif isinstance(model, EncoderCNN):
                 load_model = EncoderCNN.from_pretrained(
                     input_dir, subfolder=sub_dir)
+                model.register_to_config(**load_model.config)
+            elif isinstance(model, peft.PeftModel):
+                unet = UNet2DConditionModel.from_pretrained(
+                    args.pretrained_model_name, subfolder="unet", revision=args.revision
+                )
+                load_model = peft.PeftModel.from_pretrained(
+                    unet, os.path.join(input_dir, sub_dir)
+                    )
                 model.register_to_config(**load_model.config)
             # todo need to load object encoder here
             else:
@@ -856,6 +865,12 @@ def main(args):
         disable=not accelerator.is_local_main_process,
         position=0, leave=True
     )
+    from diffusers import StableDiffusion3Pipeline
+    pipe = StableDiffusion3Pipeline.from_pretrained(
+        'stabilityai/stable-diffusion-3-medium-diffusers',
+        text_encoder_3=None,
+        tokenizer_3=None,
+        torch_dtype=torch.float16).to(vae.device)
     bce_loss_calculator = nn.BCELoss()
     loss_calculator = nn.Sigmoid()
     for epoch in range(first_epoch, args.num_train_epochs):
@@ -877,8 +892,8 @@ def main(args):
             pixel_values = batch["pixel_values"].to(dtype=weight_dtype)
 
             # Convert images to latent space
-            model_input = vae.encode(pixel_values).latent_dist.sample()
-            model_input = model_input * vae.config.scaling_factor
+            model_input = pipe.vae.encode(pixel_values).latent_dist.sample()
+            model_input = model_input * pipe.vae.config.scaling_factor
 
             # Sample noise that we'll add to the model input
             if args.offset_noise:
@@ -940,7 +955,7 @@ def main(args):
                     # attn_logits_flatten= attn_logits.squeeze(1)
                     # bce_loss = bce_loss_calculator(attn_logits_flatten, reshaped_masks)
                 else:
-                    num_slots = slot_attn.num_slots
+                    num_slots = slot_attn_config['num_slots']
                     slots, attn = slot_attn(feat[:, None])  # for the time dimension
                     slots = slots[:, 0]
 
@@ -951,6 +966,12 @@ def main(args):
             model_pred = unet(
                 noisy_model_input, timesteps, slots,
             ).sample
+            #todo to use sd3
+            """
+                from diffusers.models.transformers.transformer_sd3 import  SD3Transformer2DModel
+                sd3tf = SD3Transformer2DModel()
+                sd3tf(noisy_model_input, slots.repeat(1, 1, 4), torch.randn((16, 2048)).to(slots.device).to(slots.dtype), timesteps)
+            """
 
             # Get the target for loss depending on the prediction type
             if noise_scheduler.config.prediction_type == "epsilon":
@@ -1053,6 +1074,22 @@ def main(args):
                         logger.info(f"Saved state to {save_path}")
 
                     images = []
+                    if global_step % args.training_steps == 0:
+                        images = log_validation(
+                            val_dataset=train_dataset,
+                            backbone=backbone,
+                            slot_attn=slot_attn if args.train_slot else None,
+                            unet=unet,
+                            vae=vae,
+                            scheduler=noise_scheduler,
+                            args=args,
+                            accelerator=accelerator,
+                            weight_dtype=weight_dtype,
+                            global_step=global_step,
+                            object_encoder_cnn=object_encoder_cnn,
+                            num_slots=num_slots,
+                            log_type='train',
+                        )
 
                     if global_step % args.validation_steps == 0:
                         images = log_validation(

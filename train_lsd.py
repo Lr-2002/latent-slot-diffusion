@@ -959,6 +959,12 @@ def main(args):
             model_pred = unet(
                 noisy_model_input, timesteps, slots,
             ).sample
+            #todo to use sd3
+            """
+                from diffusers.models.transformers.transformer_sd3 import  SD3Transformer2DModel
+                sd3tf = SD3Transformer2DModel()
+                sd3tf(noisy_model_input, slots.repeat(1, 1, 4), torch.randn((16, 2048)).to(slots.device).to(slots.dtype), timesteps)
+            """
 
             # Get the target for loss depending on the prediction type
             if noise_scheduler.config.prediction_type == "epsilon":
