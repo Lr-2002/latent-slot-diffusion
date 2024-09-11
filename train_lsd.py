@@ -947,7 +947,7 @@ def main(args):
                     # attn_logits_flatten= attn_logits.squeeze(1)
                     # bce_loss = bce_loss_calculator(attn_logits_flatten, reshaped_masks)
                 else:
-                    num_slots = slot_attn.num_slots
+                    num_slots = slot_attn_config['num_slots']
                     slots, attn = slot_attn(feat[:, None])  # for the time dimension
                     slots = slots[:, 0]
 
