@@ -140,11 +140,11 @@ def dino_in_slots_out(batch, feat, object_encoder_cnn):
 
         # `padded_aligned_features` shape: [batch_size, max_rois, 768, 2, 2]
         # print(padded_aligned_features.shape)  # Expected output: [16, max_rois, 768, 2, 2]
-        pos_emb = object_encoder_cnn.bbx_to_pos(padded_rois.to(object_encoder_cnn.device))
+        pos_emb = object_encoder_cnn.bbx2pos(padded_rois.to(object_encoder_cnn.device))
         pos_emb = pos_emb.unsqueeze(-1).repeat(1, 1, 1, 4)
         flatten_slots = padded_aligned_features.flatten(-2)
         cated_slots = torch.cat([flatten_slots.to(pos_emb.device), pos_emb], dim=-2).permute(0, 1, 3, 2)
-        slots = object_encoder_cnn.cat_to_slots(cated_slots).flatten(1,2)
+        slots = object_encoder_cnn.cat2slots(cated_slots).flatten(1,2)
         return slots, num_slots
 
 @torch.no_grad()
@@ -253,7 +253,7 @@ def log_validation(
 
                     masks = batch['mask'].to(feat.device)
                     num_slots = int(masks.max().item()) + 1
-                    feat = object_encoder_cnn.spatial_pos(feat)
+                    feat = object_encoder_cnn.spatial(feat)
                     mask_resized = F.interpolate(masks, size=(64, 64), mode='nearest', align_corners=None)
                     # mask_resized = mask_resized.permute(0,1,3,4,2)
                     mask_resized = [mask_resized == i for i in range(num_slots)]
@@ -261,7 +261,7 @@ def log_validation(
                     masked_emb = torch.stack(masked_emb, dim=0).flatten(end_dim=1)
 
                     objects_emb = object_encoder_cnn(masked_emb).reshape(-1, num_slots, args.d_model)
-                    slots = object_encoder_cnn.mlp(object_encoder_cnn.layer_norm(objects_emb))
+                    slots = object_encoder_cnn.layer_proj(objects_emb)
                     # add empty here
                     # replace slots with gaussian noise
                     need_to_replace = torch.stack([mask.sum(dim=(2, 3)) == 0 for mask in mask_resized]).permute(1,0,2).to(torch.int)
@@ -925,13 +925,13 @@ def main(args):
                     masks = batch['mask']
                     num_slots = int(masks.max().item()) + 1
                     mask_resized = F.interpolate(masks, size=(64, 64), mode='nearest', align_corners=None)
-                    feat = object_encoder_cnn.spatial_pos(feat)
+                    feat = object_encoder_cnn.spatial(feat)
                     mask_resized = [mask_resized == i for i in range(num_slots)]
                     masked_emb = [feat * mask for mask in mask_resized]
                     masked_emb = torch.stack(masked_emb, dim=0).flatten(end_dim=1)
 
                     objects_emb = object_encoder_cnn(masked_emb).reshape(-1, num_slots, args.d_model) # TODO Why no update ?
-                    slots = object_encoder_cnn.mlp(object_encoder_cnn.layer_norm(objects_emb))
+                    slots = object_encoder_cnn.layer_proj(objects_emb)
                     # slots = object_encoder_cnn.mlp(object_encoder_cnn.layer_norm(objects_emb) + objects_emb ) # TODO use this if maskloss is not working
 
                     # replace slots with gaussian noise

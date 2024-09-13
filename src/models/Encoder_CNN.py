@@ -112,7 +112,16 @@ class EncoderCNN( ModelMixin, ConfigMixin):
 
         self.cross_attention = TransformerDecoder(num_blocks, max_len, d_model, num_heads)
 
+    def spatial(self, inputs):
+        return self.spatial_pos(inputs)
 
-
+    def layer_proj(self, inputs):
+        return self.mlp(self.layer_norm(inputs))
     def forward(self, x):
         return self.object_encoder_cnn(x)
+
+    def bbx2pos(self, inputs):
+        return self.bbx_to_pos(inputs)
+
+    def cat2slots(self, inputs):
+        return self.cat_to_slots(inputs)
