@@ -112,5 +112,7 @@ class EncoderCNN( ModelMixin, ConfigMixin):
 
         self.cross_attention = TransformerDecoder(num_blocks, max_len, d_model, num_heads)
 
+
+
     def forward(self, x):
         return self.object_encoder_cnn(x)

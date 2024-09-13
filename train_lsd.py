@@ -6,6 +6,7 @@ from peft import PeftModel
 import copy
 import gc
 import hashlib
+from diffusers.schedulers.scheduling_flow_match_euler_discrete import FlowMatchEulerDiscreteScheduler
 import importlib
 import itertools
 import logging

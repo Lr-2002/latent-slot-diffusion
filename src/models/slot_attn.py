@@ -28,7 +28,9 @@ class MultiHeadSTEVESA(ModelMixin, ConfigMixin):
                  input_resolution, epsilon=1e-8, 
                  learnable_slot_init=False, 
                  bi_level=False,
-                 input_slots=False):
+                 input_slots=False,
+                 pooled_proj_dim=2048,
+                 ):
         super().__init__()
 
         self.pos = CartesianPositionalEmbedding(input_size, input_resolution)
@@ -86,6 +88,8 @@ class MultiHeadSTEVESA(ModelMixin, ConfigMixin):
         
         self.out_layer_norm = nn.LayerNorm(slot_size)
         self.out_linear = nn.Linear(slot_size, out_size)
+        # self.slots_to_sd3 = nn.Linear(out_size, sd3_size)
+        self.output_proj = nn.Linear(out_size * num_slots, pooled_proj_dim)
         
     def forward(self, inputs, inputs_slots=None, need_logits=False):
         print('inputs', inputs.shape, inputs.device)

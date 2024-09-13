@@ -34,6 +34,7 @@ import diffusers
 from diffusers import (
     AutoencoderKL,
     DDPMScheduler,
+    FlowMatchEulerDiscreteScheduler,
     StableDiffusionPipeline,
     UNet2DConditionModel,
 )
@@ -149,6 +150,7 @@ def dino_in_slots_out(batch, feat, object_encoder_cnn):
 
 @torch.no_grad()
 def log_validation(
+    pipeline,
     val_dataset,
     backbone,
     slot_attn,
@@ -202,16 +204,16 @@ def log_validation(
     scheduler = scheduler_class.from_config(
         scheduler.config, **scheduler_args)
 
-    pipeline = StableDiffusionPipeline(
-        vae=vae,
-        text_encoder=None,
-        tokenizer=None,
-        unet=unet,
-        scheduler=scheduler,
-        safety_checker=None,
-        feature_extractor=None,
-        requires_safety_checker=None,
-    )
+    # pipeline = StableDiffusionPipeline(
+    #     vae=vae,
+    #     text_encoder=None,
+    #     tokenizer=None,
+    #     unet=unet,
+    #     scheduler=scheduler,
+    #     safety_checker=None,
+    #     feature_extractor=None,
+    #     requires_safety_checker=None,
+    # )
 
     pipeline = pipeline.to(accelerator.device)
     pipeline.set_progress_bar_config(disable=True)
@@ -276,14 +278,17 @@ def log_validation(
 
             # slots, attn = slot_attn(feat[:, None])  # for the time dimension
             # slots = slots[:, 0]
+
+            proj = slot_attn.output_proj(slots.flatten(1))
+            slots = torch.nn.functional.pad(slots, (0, 0, 0, 246))
             images_gen = pipeline(
                 prompt_embeds=slots,
+                pooled_prompt_embeds=proj,
                 height=args.resolution,
                 width=args.resolution,
                 num_inference_steps=25,
                 generator=generator,
                 guidance_scale=1, # todo 1.5
-                output_type="pt",
             ).images
         if args.use_roi or args.use_slot_query:
             grid_image = colorizer.get_heatmap(img=(pixel_values * 0.5 + 0.5),
@@ -396,7 +401,13 @@ def from_feat_to_cross_attention_slots(feat, masks, encoder_cnn:EncoderCNN):
     return slots, num_slots
 def main(args):
     logging_dir = Path(args.output_dir, args.logging_dir)
-
+    from diffusers import StableDiffusion3Pipeline
+    pipe = StableDiffusion3Pipeline.from_pretrained(
+        'stabilityai/stable-diffusion-3-medium-diffusers',
+        text_encoder_3=None,
+        tokenizer_3=None,
+        torch_dtype=torch.float16)
+    pipe = pipe.to('cuda')
     accelerator_project_config = ProjectConfiguration(
         project_dir=args.output_dir, logging_dir=logging_dir
     )
@@ -442,18 +453,17 @@ def main(args):
             ).repo_id
 
 
-    # Load scheduler and models
-    if args.unet_config == "pretrain_sd":
-        print('-----------pretrain model is ', args.pretrained_model_name)
-        noise_scheduler = DDPMScheduler.from_pretrained(
-        args.pretrained_model_name, subfolder="scheduler")
-    else:
-        noise_scheduler_config = DDPMScheduler.load_config(args.scheduler_config)
-        noise_scheduler = DDPMScheduler.from_config(noise_scheduler_config)
-
-    vae = AutoencoderKL.from_pretrained(
-        args.pretrained_model_name, subfolder="vae")
-
+    # # Load scheduler and models
+    # if args.unet_config == "pretrain_sd":
+    #     print('-----------pretrain model is ', args.pretrained_model_name)
+    #     noise_scheduler = DDPMScheduler.from_pretrained(
+    #     args.pretrained_model_name, subfolder="scheduler")
+    # else:
+    #     noise_scheduler_config = DDPMScheduler.load_config(args.scheduler_config)
+    #     noise_scheduler = DDPMScheduler.from_config(noise_scheduler_config)
+    noise_scheduler = pipe.scheduler
+    noise_scheduler_config = noise_scheduler.config
+    vae = pipe.vae
     if os.path.exists(args.backbone_config):
         train_backbone = True
         backbone_config = UNetEncoder.load_config(args.backbone_config)
@@ -495,21 +505,23 @@ def main(args):
         unet = UNet2DConditionModelWithPos.from_config(unet_config)
     elif args.unet_config == "pretrain_sd":
         train_unet = False
-        unet = UNet2DConditionModel.from_pretrained(
-            args.pretrained_model_name, subfolder="unet", revision=args.revision
-        )
-        if args.tune_unet:
-            train_unet =True
-            from peft import get_peft_model, LoraConfig
-            unet_lora_config = LoraConfig(
-                r=args.lora_rank,
-                lora_alpha= args.lora_alpha,
-                init_lora_weights="gaussian",
-                target_modules=["to_k", "to_q", "to_v", "to_out.0"],
-            )
-            unet = get_peft_model(unet, unet_lora_config)
-            lora_layers = filter(lambda p: p.requires_grad, unet.parameters())
-            lora_parameters = list(lora_layers)
+        unet = pipe.transformer
+        # train_unet = False
+        # unet = UNet2DConditionModel.from_pretrained(
+        #     args.pretrained_model_name, subfolder="unet", revision=args.revision
+        # )
+        # if args.tune_unet:
+        #     train_unet =True
+        #     from peft import get_peft_model, LoraConfig
+        #     unet_lora_config = LoraConfig(
+        #         r=args.lora_rank,
+        #         lora_alpha= args.lora_alpha,
+        #         init_lora_weights="gaussian",
+        #         target_modules=["to_k", "to_q", "to_v", "to_out.0"],
+        #     )
+        #     unet = get_peft_model(unet, unet_lora_config)
+        #     lora_layers = filter(lambda p: p.requires_grad, unet.parameters())
+        #     lora_parameters = list(lora_layers)
     else:
         raise ValueError(
             f"Unknown unet config {args.unet_config}")
@@ -521,7 +533,7 @@ def main(args):
             for model in models:
 
                 # continue if not one of [UNetEncoder, MultiHeadSTEVESA, UNet2DConditionModelWithPos]
-                if not isinstance(model, (UNetEncoder, MultiHeadSTEVESA, UNet2DConditionModelWithPos, EncoderCNN, PeftModel)):
+                if not isinstance(model, (UNetEncoder, MultiHeadSTEVESA, EncoderCNN)):
                     continue
 
                 sub_dir = model._get_name().lower()
@@ -865,12 +877,7 @@ def main(args):
         disable=not accelerator.is_local_main_process,
         position=0, leave=True
     )
-    from diffusers import StableDiffusion3Pipeline
-    pipe = StableDiffusion3Pipeline.from_pretrained(
-        'stabilityai/stable-diffusion-3-medium-diffusers',
-        text_encoder_3=None,
-        tokenizer_3=None,
-        torch_dtype=torch.float16).to(vae.device)
+
     bce_loss_calculator = nn.BCELoss()
     loss_calculator = nn.Sigmoid()
     for epoch in range(first_epoch, args.num_train_epochs):
@@ -892,8 +899,8 @@ def main(args):
             pixel_values = batch["pixel_values"].to(dtype=weight_dtype)
 
             # Convert images to latent space
-            model_input = pipe.vae.encode(pixel_values).latent_dist.sample()
-            model_input = model_input * pipe.vae.config.scaling_factor
+            model_input = vae.encode(pixel_values).latent_dist.sample()
+            model_input = model_input *vae.config.scaling_factor
 
             # Sample noise that we'll add to the model input
             if args.offset_noise:
@@ -908,12 +915,15 @@ def main(args):
                 0, noise_scheduler.config.num_train_timesteps, (bsz,), device=model_input.device
             )
             timesteps = timesteps.long()
-
             # Add noise to the model input according to the noise magnitude at each timestep
             # (this is the forward diffusion process)
-            noisy_model_input = noise_scheduler.add_noise(
-                model_input, noise, timesteps)
-
+            # noisy_model_input = noise_scheduler.add_noise(
+            #     model_input, noise, timesteps)
+            # todo use the correlated timesteps in the list
+            noise_timesteps = noise_scheduler.timesteps[timesteps.cpu()]
+            noisy_model_input = noise_scheduler.scale_noise(
+                model_input, noise_timesteps, noise
+            )
             # timestep is not used, but should we?
             if args.backbone_config == "pretrain_dino":
                 # todo here use pretrain_dino or other to make the backbone to get feature
@@ -963,10 +973,15 @@ def main(args):
                 slots = slots.to(dtype=weight_dtype)
 
             # Predict the noise residual
-            model_pred = unet(
-                noisy_model_input, timesteps, slots,
-            ).sample
-            #todo to use sd3
+            # model_pred = unet(
+            #     noisy_model_input, timesteps, slots,
+            # ).sample
+            timesteps = timesteps.to('cuda')
+            slot_attn = slot_attn.to(slots.dtype)
+            proj = slot_attn.output_proj(slots.flatten(1))
+            slots = torch.nn.functional.pad(slots, (0,0,0,246))
+            model_pred = unet(noisy_model_input, slots,
+                 proj, timesteps).sample            #todo to use sd3
             """
                 from diffusers.models.transformers.transformer_sd3 import  SD3Transformer2DModel
                 sd3tf = SD3Transformer2DModel()
@@ -974,16 +989,17 @@ def main(args):
             """
 
             # Get the target for loss depending on the prediction type
-            if noise_scheduler.config.prediction_type == "epsilon":
-                target = noise
-            elif noise_scheduler.config.prediction_type == "v_prediction":
-                target = noise_scheduler.get_velocity(
-                    model_input, noise, timesteps)
-            else:
-                raise ValueError(
-                    f"Unknown prediction type {noise_scheduler.config.prediction_type}")
-
+            # if noise_scheduler.config.prediction_type == "epsilon":
+            #     target = noise
+            # elif noise_scheduler.config.prediction_type == "v_prediction":
+            #     target = noise_scheduler.get_velocity(
+            #         model_input, noise, timesteps)
+            # else:
+            #     raise ValueError(
+            #         f"Unknown prediction type {noise_scheduler.config.prediction_type}")
+            #
             # Compute instance loss
+            target = noise
             if args.snr_gamma is None:
                 loss = F.mse_loss(model_pred.float(),
                                   target.float(), reduction="mean")
@@ -1076,6 +1092,7 @@ def main(args):
                     images = []
                     if global_step % args.training_steps == 0:
                         images = log_validation(
+                            pipeline = pipe,
                             val_dataset=train_dataset,
                             backbone=backbone,
                             slot_attn=slot_attn if args.train_slot else None,
@@ -1093,6 +1110,7 @@ def main(args):
 
                     if global_step % args.validation_steps == 0:
                         images = log_validation(
+                            pipeline=pipe,
                             val_dataset=val_dataset,
                             backbone=backbone,
                             slot_attn=slot_attn if args.train_slot else None,
