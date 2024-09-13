@@ -23,6 +23,7 @@ import torch
 import torch.nn.functional as F
 import torch.utils.checkpoint
 import transformers
+from torch.nn.parallel import DistributedDataParallel as DDP
 from accelerate import Accelerator
 from accelerate.logging import get_logger
 from accelerate.utils import ProjectConfiguration, set_seed
@@ -402,12 +403,14 @@ def main(args):
     accelerator_project_config = ProjectConfiguration(
         project_dir=args.output_dir, logging_dir=logging_dir
     )
+    ddp_kwargs = {'find_unused_parameters':True}
 
     accelerator = Accelerator(
         # gradient_accumulation_steps=args.gradient_accumulation_steps, # for manually handled case, should not pass it here
         mixed_precision=args.mixed_precision,
         log_with=args.report_to,
         project_config=accelerator_project_config,
+        kwargs_handlers=[DDP(**ddp_kwargs)],
     )
 
     if args.report_to == "wandb":
