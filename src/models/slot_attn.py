@@ -56,7 +56,7 @@ class MultiHeadSTEVESA(ModelMixin, ConfigMixin):
         self.learnable_slot_init = learnable_slot_init
         self.bi_level = bi_level
         # self.empty_slot_init = nn.Parameter(torch.Tensor(torch.randn(1, 1, slot_size)))
-        # self.empty_slot = nn.Parameter(torch.randn(1,1,slot_size))
+        self.empty_slot = nn.Parameter(torch.randn(1,1,slot_size))
         assert slot_size % num_heads == 0, 'slot_size must be divisible by num_heads'
 
         if learnable_slot_init:
