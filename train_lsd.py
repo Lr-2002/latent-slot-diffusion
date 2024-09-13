@@ -1,5 +1,8 @@
 import argparse
 from warnings import simplefilter
+
+import accelerate.utils
+
 simplefilter(action='ignore', category=FutureWarning)
 import peft
 from peft import PeftModel
@@ -410,7 +413,7 @@ def main(args):
         mixed_precision=args.mixed_precision,
         log_with=args.report_to,
         project_config=accelerator_project_config,
-        kwargs_handlers=[DDP(**ddp_kwargs)],
+        kwargs_handlers=[accelerate.DistributedDataParallelKwargs(find_unused_parameters=True)],
     )
 
     if args.report_to == "wandb":
