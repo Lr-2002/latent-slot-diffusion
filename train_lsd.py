@@ -140,11 +140,11 @@ def dino_in_slots_out(batch, feat, object_encoder_cnn):
 
         # `padded_aligned_features` shape: [batch_size, max_rois, 768, 2, 2]
         # print(padded_aligned_features.shape)  # Expected output: [16, max_rois, 768, 2, 2]
-        pos_emb = object_encoder_cnn.bbx2pos(padded_rois.to(object_encoder_cnn.device))
+        pos_emb = object_encoder_cnn.module.bbx2pos(padded_rois.to(object_encoder_cnn.device))
         pos_emb = pos_emb.unsqueeze(-1).repeat(1, 1, 1, 4)
         flatten_slots = padded_aligned_features.flatten(-2)
         cated_slots = torch.cat([flatten_slots.to(pos_emb.device), pos_emb], dim=-2).permute(0, 1, 3, 2)
-        slots = object_encoder_cnn.cat2slots(cated_slots).flatten(1,2)
+        slots = object_encoder_cnn.module.cat2slots(cated_slots).flatten(1,2)
         return slots, num_slots
 
 @torch.no_grad()
@@ -376,7 +376,7 @@ def from_feat_to_cross_attention_slots(feat, masks, encoder_cnn:EncoderCNN):
 
     masks = masks.to(feat.device)
     num_slots = int(masks.max().item()) + 1
-    feat = encoder_cnn.spatial_pos(feat)
+    feat = encoder_cnn.module.spatial_pos(feat)
     mask_resized = F.interpolate(masks, size=(64, 64), mode='nearest', align_corners=None)
     # mask_resized = mask_resized.permute(0,1,3,4,2)
     mask_resized = [mask_resized == i for i in range(num_slots)]
@@ -388,7 +388,7 @@ def from_feat_to_cross_attention_slots(feat, masks, encoder_cnn:EncoderCNN):
     tf_input = masked_emb.flatten(3,4) #need pos
     plc_slots = []
     for i in range(slots.shape[1]):
-        plc_slots.append(encoder_cnn.cross_attention(slots[:, i].unsqueeze(1), tf_input[:,i].permute(0,2,1)))
+        plc_slots.append(encoder_cnn.module.cross_attention(slots[:, i].unsqueeze(1), tf_input[:,i].permute(0,2,1)))
     slots = torch.stack(plc_slots, dim=1).squeeze(2)
     bbx = bbx.to(slots.device)
     ppn = PositionNet(slots.shape[-1], slots.shape[-1]).to(slots.device)
