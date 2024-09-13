@@ -265,7 +265,7 @@ def log_validation(
                     # add empty here
                     # replace slots with gaussian noise
                     need_to_replace = torch.stack([mask.sum(dim=(2, 3)) == 0 for mask in mask_resized]).permute(1,0,2).to(torch.int)
-                    slots = slots * (1 - need_to_replace) + slot_attn.empty_slot.expand(*slots.shape).to(slots.device) * need_to_replace
+                    slots = slots * (1 - need_to_replace) + slot_attn.module.empty_slot.expand(*slots.shape).to(slots.device) * need_to_replace
 
 
                     slots, attn = slot_attn(feat[:, None], slots)
@@ -936,7 +936,7 @@ def main(args):
 
                     # replace slots with gaussian noise
                     need_to_replace = torch.stack([mask.sum(dim=(2, 3)) == 0 for mask in mask_resized]).permute(1,0,2).to(torch.int)
-                    slots = slots * (1 - need_to_replace) + slot_attn.empty_slot.expand(*slots.shape).to(slots.device) *  need_to_replace
+                    slots = slots * (1 - need_to_replace) + slot_attn.module.empty_slot.expand(*slots.shape).to(slots.device) *  need_to_replace
 
                     # calculate slots
                     slots, attn, attn_logits = slot_attn(feat[:, None], slots, need_logits=True)
