@@ -251,7 +251,8 @@ def log_validation(
                 if args.use_mask:
                     logger.info(f'use mask to {log_type} ')
 
-                    masks = batch['mask'].to(feat.device)
+                    # masks = batch['mask'].to(feat.device)
+                    masks = batch['mask']
                     num_slots = int(masks.max().item()) + 1
                     feat = object_encoder_cnn.module.spatial(feat)
                     mask_resized = F.interpolate(masks, size=(64, 64), mode='nearest', align_corners=None)
@@ -265,7 +266,8 @@ def log_validation(
                     # add empty here
                     # replace slots with gaussian noise
                     need_to_replace = torch.stack([mask.sum(dim=(2, 3)) == 0 for mask in mask_resized]).permute(1,0,2).to(torch.int)
-                    slots = slots * (1 - need_to_replace) + slot_attn.module.empty_slot.expand(*slots.shape).to(slots.device) * need_to_replace
+                    slots = slots * (1 - need_to_replace) + slot_attn.module.empty_slot.expand(*slots.shape) * need_to_replace
+                    # slots = slots * (1 - need_to_replace) + slot_attn.module.empty_slot.expand(*slots.shape).to(slots.device) * need_to_replace
 
 
                     slots, attn = slot_attn(feat[:, None], slots)
@@ -936,7 +938,8 @@ def main(args):
 
                     # replace slots with gaussian noise
                     need_to_replace = torch.stack([mask.sum(dim=(2, 3)) == 0 for mask in mask_resized]).permute(1,0,2).to(torch.int)
-                    slots = slots * (1 - need_to_replace) + slot_attn.module.empty_slot.expand(*slots.shape).to(slots.device) *  need_to_replace
+                    slots = slots * (1 - need_to_replace) + slot_attn.module.empty_slot.expand(*slots.shape)*  need_to_replace
+                    # slots = slots * (1 - need_to_replace) + slot_attn.module.empty_slot.expand(*slots.shape).to(slots.device) *  need_to_replace
 
                     # calculate slots
                     slots, attn, attn_logits = slot_attn(feat[:, None], slots, need_logits=True)
